@@ -5,10 +5,15 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from app.models.enums import (
+    AgentName,
     AttackCategory,
+    CampaignStatus,
     FindingStatus,
     OrgPlan,
     Severity,
+    StepStatus,
+    TargetEnvironment,
+    TargetHealth,
     UserRole,
 )
 
@@ -61,6 +66,58 @@ class FindingOut(CamelModel):
     recommendation: str
     attack_prompt: str
     target_response: str
+
+
+class TargetOut(CamelModel):
+    id: UUID
+    name: str
+    endpoint: str
+    model: str
+    environment: TargetEnvironment
+    health: TargetHealth
+    created_at: datetime
+    last_scanned_at: datetime | None
+    open_findings: int
+    critical_findings: int
+
+
+class CampaignOut(CamelModel):
+    id: UUID
+    name: str
+    target_id: UUID
+    target_name: str
+    categories: list[AttackCategory]
+    variants_per_case: int
+    status: CampaignStatus
+    created_at: datetime
+    created_by: str
+
+
+class SweepStepOut(CamelModel):
+    id: UUID
+    agent: AgentName
+    category: AttackCategory
+    strategy: str
+    status: StepStatus
+    detail: str
+    confidence: float | None
+    timestamp: datetime
+
+
+class SweepOut(CamelModel):
+    id: UUID
+    campaign_id: UUID
+    campaign_name: str
+    target_name: str
+    status: CampaignStatus
+    started_at: datetime | None
+    progress: int
+    total_cases: int
+    completed_cases: int
+    findings_count: int
+    current_agent: AgentName | None
+    current_activity: str | None
+    steps: list[SweepStepOut]
 
 
 class DashboardStats(CamelModel):
