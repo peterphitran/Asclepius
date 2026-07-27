@@ -1,4 +1,8 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   ClipboardCheck,
@@ -25,13 +29,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
+import { api, ApiError, clearToken, getToken, type DashboardStats } from "@/lib/api";
 import { AGENT_META, formatRelativeTime } from "@/lib/display";
-import {
-  dashboardStats,
-  findings,
-  liveSweep,
-  targets,
-} from "@/lib/mock-data";
+import type { Finding, Sweep, Target } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function StatCard({
@@ -70,7 +71,74 @@ function StatCard({
   );
 }
 
+function DashboardSkeleton() {
+  return (
+    <div className="mx-auto flex max-w-6xl flex-col gap-6">
+      <Skeleton className="h-9 w-64" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-28 w-full" />
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Skeleton className="h-72 w-full" />
+        <Skeleton className="h-72 w-full" />
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
+  const router = useRouter();
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(
+    null,
+  );
+  const [targets, setTargets] = useState<Target[]>([]);
+  const [sweeps, setSweeps] = useState<Sweep[]>([]);
+  const [findings, setFindings] = useState<Finding[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!getToken()) {
+      router.replace("/login");
+      return;
+    }
+    let active = true;
+    Promise.all([api.dashboard(), api.targets(), api.sweeps(), api.findings()])
+      .then(([stats, targetList, sweepList, findingList]) => {
+        if (!active) return;
+        setDashboardStats(stats);
+        setTargets(targetList);
+        setSweeps(sweepList);
+        setFindings(findingList);
+      })
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 401) {
+          clearToken();
+          router.replace("/login");
+          return;
+        }
+        if (active) setError("Failed to load dashboard data.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
+  const liveSweep = sweeps.find((s) => s.status === "running") ?? sweeps[0];
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-6xl rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-sm text-destructive">
+        {error}
+      </div>
+    );
+  }
+
+  if (!dashboardStats || !liveSweep) {
+    return <DashboardSkeleton />;
+  }
+
   const productionTargets = targets.filter(
     (t) => t.environment === "production",
   ).length;
@@ -129,7 +197,7 @@ export default function DashboardPage() {
             <CardDescription>Distribution across all targets</CardDescription>
           </CardHeader>
           <CardContent>
-            <SeverityChart />
+            <SeverityChart findings={findings} />
           </CardContent>
         </Card>
         <Card>
@@ -138,7 +206,7 @@ export default function DashboardPage() {
             <CardDescription>Where vulnerabilities cluster</CardDescription>
           </CardHeader>
           <CardContent>
-            <CategoryChart />
+            <CategoryChart findings={findings} />
           </CardContent>
         </Card>
       </div>
