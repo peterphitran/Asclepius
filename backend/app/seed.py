@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete
 
+from app.core.security import hash_password
 from app.db import SessionLocal
 from app.models import (
     Campaign,
@@ -91,6 +92,10 @@ async def seed() -> None:
             initials="LC",
         )
         session.add_all([priya, marcus, sofia, liam])
+
+        dev_hash = hash_password("asclepius")
+        for user in (priya, marcus, sofia, liam):
+            user.password_hash = dev_hash
 
         # --- Targets -------------------------------------------------------
         triage = Target(
