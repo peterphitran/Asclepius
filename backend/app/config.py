@@ -20,6 +20,10 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    jwt_secret: str = "dev-insecure-change-me-please-set-a-real-secret"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 24
+
 
 @lru_cache
 def get_settings() -> Settings:
