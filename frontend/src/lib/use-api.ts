@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type DependencyList, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ApiError, clearToken, getToken } from "./api";
 
 /** Fetch a protected API resource once on mount, handling auth, loading, and errors. */
-export function useApiResource<T>(fetcher: () => Promise<T>): {
+export function useApiResource<T>(
+  fetcher: () => Promise<T>,
+  deps: DependencyList = [],
+): {
   data: T | null;
   error: string | null;
   loading: boolean;
@@ -26,6 +29,7 @@ export function useApiResource<T>(fetcher: () => Promise<T>): {
       .then((result) => {
         if (!active) return;
         setData(result);
+        setError(null);
         setLoading(false);
       })
       .catch((err) => {
@@ -41,9 +45,9 @@ export function useApiResource<T>(fetcher: () => Promise<T>): {
     return () => {
       active = false;
     };
-    // fetcher is intentionally omitted: callers pass an inline closure each render.
+    // fetcher is intentionally omitted; `deps` carries the values that should refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]);
+  }, [router, ...deps]);
 
   return { data, error, loading };
 }
