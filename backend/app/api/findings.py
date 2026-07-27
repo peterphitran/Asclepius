@@ -11,7 +11,7 @@ from app.schemas import FindingOut
 router = APIRouter(prefix="/findings", tags=["findings"])
 
 
-def _to_out(finding: Finding) -> FindingOut:
+def finding_to_out(finding: Finding) -> FindingOut:
     return FindingOut(
         id=finding.id,
         title=finding.title,
@@ -40,7 +40,7 @@ async def list_findings(current_user: CurrentUser, session: SessionDep) -> list[
         .options(selectinload(Finding.target))
         .order_by(Finding.discovered_at.desc())
     )
-    return [_to_out(f) for f in result.scalars().all()]
+    return [finding_to_out(f) for f in result.scalars().all()]
 
 
 @router.get("/{finding_id}", response_model=FindingOut)
@@ -55,4 +55,4 @@ async def get_finding(
     finding = result.scalar_one_or_none()
     if finding is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Finding not found")
-    return _to_out(finding)
+    return finding_to_out(finding)
