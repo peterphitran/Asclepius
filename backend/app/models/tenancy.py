@@ -29,5 +29,6 @@ class User(UUIDMixin, TimestampMixin, Base):
     email: Mapped[str] = mapped_column(String(320), unique=True)
     role: Mapped[UserRole] = mapped_column(enum_col(UserRole), default=UserRole.VIEWER)
     initials: Mapped[str] = mapped_column(String(4))
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     organization: Mapped[Organization] = relationship(back_populates="users")
