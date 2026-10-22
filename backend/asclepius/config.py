@@ -1,9 +1,10 @@
+import os
 import tomllib
 from pathlib import Path
 
 from pydantic import ValidationError
 
-from asclepius.domain import AppError, EvaluatorConfig, ProfileConfig
+from asclepius.domain import AppError, EvaluatorConfig, ProfileConfig, SubmissionPlan
 
 
 def _read(path: Path) -> dict:
@@ -34,3 +35,27 @@ def load_evaluator(path: Path) -> EvaluatorConfig:
     except ValidationError:
         raise AppError("config_validation", "Invalid evaluator fields or values.", 2) from None
     return config
+
+
+def load_plan(path: Path) -> SubmissionPlan:
+    try:
+        with path.open("rb") as source:
+            content = source.read(1048577)
+    except OSError:
+        raise AppError("config_read", "Cannot read evaluation plan.", 2) from None
+    if len(content) > 1048576:
+        raise AppError("config_size", "Evaluation plan exceeds the 1 MiB limit.", 2)
+    try:
+        return SubmissionPlan.model_validate_json(content)
+    except ValidationError:
+        raise AppError("invalid_plan", "Invalid evaluation plan fields or values.", 2) from None
+
+
+def data_directory(override: Path | None = None) -> Path:
+    if override is not None:
+        return override.resolve()
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        return (base / "Asclepius").resolve()
+    base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+    return (base / "asclepius").resolve()

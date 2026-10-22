@@ -2,9 +2,10 @@
 
 Implementation checkpoint on 2026-10-22 UTC, branch `codex/cli-evaluator`.
 
-Tasks 1 and 2 implement CLI help, TOML validation, independent target/evaluator settings,
-typed immutable domain contracts, and a tested SQLite repository. Evaluation execution
-and public profile/run commands remain planned.
+Tasks 1 through 3 implement CLI configuration, local initialization, profile management,
+persisted history/findings, watch, cancellation intent, and linked retries over SQLite.
+Supplied-plan submission is tested with controlled readiness. Evaluation execution and
+real daemon startup remain planned.
 
 This worktree starts from `d13e794` and carries the current documentation. The original
 checkout's frontend deletion and uncommitted backend lifecycle changes remain there,
@@ -16,14 +17,15 @@ discarding the original removal work.
 
 | Area | Location | Current behavior |
 | --- | --- | --- |
-| CLI foundation | `backend/asclepius/` | Help, version, target/evaluator TOML validation, structured errors, and domain contracts. No execution services. |
-| Local storage | `backend/asclepius/storage.py` | SQLite snapshots, conditional claims, fenced writes, atomic stage/evidence commits, and orphan interruption. Repository API only, not daemon execution. |
+| CLI | `backend/asclepius/cli.py` | Help, configuration, initialization, profiles, run/history/finding reads, watch, cancellation, and retry commands. |
+| Services | `backend/asclepius/services.py` | Complete supplied-plan validation, credential presence checks, pinned snapshots, cancellation, and linked retries. No provider calls or implicit daemon launch. |
+| Local storage | `backend/asclepius/storage.py` | SQLite snapshots, paginated reads, profile tombstones, claims, fenced writes, atomic stage/evidence commits, and orphan interruption. Not daemon execution. |
 | API | `backend/app/api/` | Auth, target, campaign, sweep, finding, review, summary, and health routes. |
 | Data | `backend/app/models/`, `backend/app/db.py` | Organization-scoped Postgres records through async SQLAlchemy. |
 | Migrations | `backend/alembic/` | Inherited Postgres revisions; current database revision is not verified. |
 | Fixtures | `backend/app/seed.py` | Resets domain data and inserts simulated records. |
 | Infrastructure | `backend/docker-compose.yml` | Postgres and Redis containers; Redis is unused by execution. |
-| Tests | `backend/tests/` | Three inherited health/security tests, 42 CLI foundation tests, and 22 real SQLite/storage process tests. |
+| Tests | `backend/tests/` | Three inherited tests, 42 CLI foundation tests, 22 SQLite/storage cases, and 24 service/CLI management cases. |
 
 Campaign creation stores queued records and returns an identifier. Nothing dispatches
 them to a worker or sends evaluation requests to a target.
@@ -35,10 +37,10 @@ API authentication is also current code, not a requirement for the personal CLI.
 
 ## Missing product capabilities
 
-The installed CLI entry point and SQLite repository exist. There is no public storage/profile/run
-command workflow, local daemon, executable check registry, target adapter, evaluation pipeline,
-comparison engine, or report/chart generator. Future command groups fail explicitly rather
-than claiming success. The next task connects profiles, submission, and inspection to storage.
+There is no real daemon, built-in check registry, target adapter, evaluation pipeline,
+comparison engine, report/chart generator, or storage migration command. These commands fail
+explicitly. Normal submission remains unavailable until a real daemon starts. The next task
+adds manual process ownership, readiness, and outbound budgets, not model execution yet.
 
 ## Reuse and migration considerations
 

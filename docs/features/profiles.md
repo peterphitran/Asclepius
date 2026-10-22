@@ -1,9 +1,8 @@
 # Application Profiles
 
-Status: planned. Save named connection settings for applications you want to evaluate.
-The CLI foundation can validate target/evaluator TOML files as described in
-[development](../development.md#cli-foundation). Saving profiles and submitting runs
-are not implemented yet.
+Status: profile CRUD and SQLite history preservation are implemented. Supplied-plan
+submission is tested with controlled readiness, not an actual daemon. See
+[development](../development.md#manage-local-profiles-and-inspect-history).
 
 ## Sub-features
 
@@ -16,8 +15,9 @@ are not implemented yet.
 ## How to get to it (user POV)
 
 Register an application once, then select its profile by name when submitting a run.
-Add/list/edit syntax remains open. The backend design requires unique profile names
-and stable profile IDs.
+Use `targets add <name> --config <target.toml>`, `targets list`, `targets show <name-or-id>`,
+`targets edit <name-or-id> --config <target.toml>`, and `targets remove <name-or-id>`.
+Names are unique and IDs survive edits. Removal retains the identity as a tombstone.
 
 ## Driving it with the terminal
 
@@ -30,8 +30,9 @@ Cover empty storage, invalid settings, and ambiguous names.
 - A profile name does not start the target or discover a source folder.
 - Stable identities are needed even when names or endpoints change.
 - Credentials belong to the connection design, not to a product login.
-- Proposed default: renaming/removing a profile never deletes its historical identity
-  or changes accepted run snapshots. Queued work uses its saved configuration.
+- Renaming/removing a profile never deletes its historical identity or changes accepted
+  run snapshots. Queued work uses saved configuration. Removal blocks new submissions
+  and retries; removed names remain reserved. Ambiguous name/ID selectors fail explicitly.
 - Resolve secrets and revalidate execution permission when work begins; missing or
   revoked credentials fail clearly rather than falling back to another identity.
 - Two profiles may reference one target. Share scheduling/resource limits using an

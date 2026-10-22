@@ -10,9 +10,10 @@
 
 **Spec:** [Backend design](../specs/backend-design.md), [pipeline](../specs/evaluation-pipeline.md), [product](../product.md), [feature map](../features/README.md). [RAG design](../specs/rag-testing.md) is a later capability milestone, not implemented by this plan.
 
-Status: implementation started on `codex/cli-evaluator`. Tasks 1 and 2 are verified in
+Status: implementation started on `codex/cli-evaluator`. Tasks 1 through 3 are verified in
 [the foundation evidence](../verification/evidence/cli-foundation.json) and
-[the storage evidence](../verification/evidence/cli-storage.json). Tasks 3 through 12 remain pending.
+[the storage evidence](../verification/evidence/cli-storage.json), and
+[the management evidence](../verification/evidence/cli-management.json). Tasks 4 through 12 remain pending.
 
 ## Global Constraints
 
@@ -45,10 +46,12 @@ Status: implementation started on `codex/cli-evaluator`. Tasks 1 and 2 are verif
 This is one dependent implementation chain, not several parallel scaffolding projects.
 Intermediate tasks have testable deliverables; only M1's final gate establishes the user workflow.
 
-Current source: `backend/app/` is FastAPI/Postgres; `app/services/sweep_state.py` and its tests
+Planning baseline: `backend/app/` is FastAPI/Postgres; `app/services/sweep_state.py` and its tests
 contain useful transition cases, but reclaim/retry behavior differs from this design.
 Do not import those ORM types or translate row locks into the new scheduler.
-`backend/pyproject.toml` packages only `app` and has no CLI entry point. No existing engine to extend.
+At that baseline, `backend/pyproject.toml` packaged only `app` and had no CLI entry point.
+Tasks 1 through 3 add the new package, entry point, repository, and management commands;
+there was no existing execution engine to extend.
 
 Before execution, inventory `git status --short` and preserve the current dirty work through
 a reviewed checkpoint/patch handoff before creating an isolated execution worktree. A worktree
@@ -245,30 +248,53 @@ check cancellation, ownership, and budgets before dispatch.
 `backend/tests/cli/test_cli_profiles.py`. Extend `storage.py`, `cli.py`, `config.py`.
 
 **Interfaces:** `EvaluationService(repo: Repository)` exposes async
-`save_profile(config: ProfileConfig, *, profile_id: str | None = None) -> str`, `submit(profile: str, evaluator: EvaluatorConfig, checks: list[CheckDefinition]) -> str`,
+`save_profile(config: ProfileConfig, *, profile_id: str | None = None) -> str`,
+`submit(profile: str, evaluator: EvaluatorConfig, checks: tuple[CheckDefinition, ...], *, prompts: tuple[PromptSnapshot, ...]) -> str`,
 `cancel(run_id: str) -> RunView`, `retry(run_id: str) -> str`.
-Repository extends the Task 2 profile/enqueue primitives and adds async `list_profiles() -> list[ProfileConfig]`,
-`get_profile(identity: str) -> ProfileConfig`, `remove_profile(identity: str) -> None`,
+Repository extends the Task 2 profile/enqueue primitives and adds async
+`list_profiles(*, limit: int = 50, cursor: str | None = None) -> Page[ProfileRecord]`,
+`get_profile(identity: str | UUID) -> ProfileRecord`, `remove_profile(identity: str) -> str`,
 `request_cancel(run_id: str) -> RunView`,
-`list_runs(profile_id: str | None = None) -> list[RunView]`,
-`list_findings(run_id: str) -> list[Finding]`, `read_finding(finding_id: str) -> Finding`.
+`list_runs(*, profile_id: str | None = None, limit: int = 50, cursor: str | None = None) -> Page[RunSummary]`,
+`list_findings(run_id: str, *, limit: int = 50, cursor: str | None = None) -> Page[Finding]`,
+`read_finding(finding_id: str) -> Finding`.
 `enqueue` checks daemon acceptance and inserts the snapshot/event in the same transaction.
 
-- [ ] Write tests that two profiles retain distinct IDs; duplicate names fail; editing/removing
+Grounding review accepted these refinements before implementation. `ProfileRecord` retains
+stable identity and revision. Pages use ascending UUID keyset ordering, fetch one extra row,
+and return the last emitted ID as `next_cursor` only when more rows exist. They are live queries,
+not snapshot-isolated browsing sessions. `runs list --profile` takes a stable profile ID and
+continues to work after removal. String profile selectors reject ambiguous ID/name matches.
+Known internal profile UUID values resolve by exact ID, never by another profile's name.
+Removal resolves its selector, writes the tombstone, and returns the affected ID in one
+transaction. The CLI does not resolve a mutable name twice.
+
+CLI submission accepts `--plan <plan.json>` with a strict versioned `SubmissionPlan` of
+full checks and exactly one nonblank prompt per role. It has no caller-assigned run identity.
+The service pins these inputs without inventing a registry or prompts. `--pack` explicitly
+fails until Task 6 provides the real built-in pack. The future pack loader feeds the same service.
+Retry requires the original stable profile to remain active, pins the source configuration,
+and rechecks credentials and complete plan contents. Tombstoning a profile revokes new
+submissions/retries without changing accepted runs or history. Active cancellation records
+intent only until the coordinator exists. Queued cancellation completes transactionally.
+Task 3 exposes `init` and selects the OS data-directory default so its CLI can be used.
+Task 4 still owns process lifetime locks, network-store rejection, and migration commands.
+
+- [x] Write tests that two profiles retain distinct IDs; duplicate names fail; editing/removing
   a profile leaves history intact; stopped daemon yields exit 4 and zero inserted runs;
   unsupported requested checks yield exit 2 before requests. Supply controlled readiness in
   service tests only; do not count it as proof of a real daemon.
-- [ ] Test cancellation of queued work, cancellation request for running work, terminal-state
+- [x] Test cancellation of queued work, cancellation request for running work, terminal-state
   rejection, and retry from failed/cancelled/interrupted returns a different ID with unchanged
   source snapshot. Missing credentials fail without fallback; never print their values.
-- [ ] Run `python -m pytest tests/cli/test_services.py tests/cli/test_cli_profiles.py -q`; expect failures.
-- [ ] Implement service commands, materialized snapshots of full check definitions/prompt
+- [x] Run `python -m pytest tests/cli/test_services.py tests/cli/test_cli_profiles.py -q`; expect failures.
+- [x] Implement service commands, materialized snapshots of full check definitions/prompt
   versions, and CLI reads. Secret references are validated here and resolved again by the
   executing daemon. Reading history and profiles works while stopped. List pagination uses
   default 50/max 500 and an explicit next cursor; unknown IDs return exit 3.
-- [ ] Repeat tests, including two subprocess CLI clients against one temporary directory;
+- [x] Repeat tests, including two subprocess CLI clients against one temporary directory;
   expect matching persisted profile/run IDs and no implicit process launch.
-- [ ] Commit owned Task 3 changes: `feat: manage profiles and queued evaluations`.
+- [x] Commit owned Task 3 changes: `feat: manage profiles and queued evaluations`.
 
 ### Task 4: Manual daemon, OS ownership, and outbound budgets
 

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
 from typing import TypeVar
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import portalocker
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -22,9 +22,12 @@ from asclepius.domain import (
     Observation,
     OperationIntent,
     OperationRequest,
+    Page,
     ProfileConfig,
+    ProfileRecord,
     RunSnapshot,
     RunState,
+    RunSummary,
     RunView,
     SelectionOutput,
     StageOutput,
@@ -106,8 +109,8 @@ class Repository:
         await asyncio.to_thread(self._initialize)
 
     def _initialize(self) -> None:
-        self.data_dir.mkdir(parents=True, exist_ok=True)
         try:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
             with self._lock(exclusive=True), closing(self._connect(create=True)) as connection:
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
                 if version == 1:
@@ -234,6 +237,7 @@ class Repository:
                 self._same(existing[0], _json(snapshot))
                 return identity
             self._ready(connection)
+            self._profile_row(connection, snapshot.profile_id)
             connection.execute(
                 "INSERT INTO runs(id,profile_id,snapshot_json,source_run_id,state,created_at) "
                 "VALUES(?,?,?,?,'queued',?)",
@@ -526,30 +530,180 @@ class Repository:
 
         return await self._run(action)
 
-    async def read_run(self, run_id: str) -> RunView:
-        def action(connection):
-            row = self._run_row(connection, run_id)
-
-            def documents(table, model):
-                return tuple(
-                    model.model_validate_json(item[0])
-                    for item in connection.execute(
-                        f"SELECT document_json FROM {table} WHERE run_id=? ORDER BY rowid",
-                        (run_id,),
-                    )
+    @staticmethod
+    def _view(connection: sqlite3.Connection, row: sqlite3.Row) -> RunView:
+        def documents(table, model):
+            return tuple(
+                model.model_validate_json(item[0])
+                for item in connection.execute(
+                    f"SELECT document_json FROM {table} WHERE run_id=? ORDER BY rowid",
+                    (row["id"],),
                 )
+            )
 
-            return RunView(
-                snapshot=RunSnapshot.model_validate_json(row["snapshot_json"]),
-                state=row["state"],
-                cancel_requested=bool(row["cancel_requested"]),
-                reason=row["reason"],
-                observations=documents("observations", Observation),
-                judgments=documents("judgments", Judgment),
-                findings=documents("findings", Finding),
+        return RunView(
+            snapshot=RunSnapshot.model_validate_json(row["snapshot_json"]),
+            state=row["state"],
+            cancel_requested=bool(row["cancel_requested"]),
+            reason=row["reason"],
+            observations=documents("observations", Observation),
+            judgments=documents("judgments", Judgment),
+            findings=documents("findings", Finding),
+        )
+
+    async def read_run(self, run_id: str) -> RunView:
+        return await self._run(
+            lambda connection: self._view(connection, self._run_row(connection, run_id))
+        )
+
+    @staticmethod
+    def _profile_row(connection: sqlite3.Connection, identity: str | UUID) -> sqlite3.Row:
+        if isinstance(identity, UUID):
+            rows = connection.execute(
+                "SELECT * FROM profiles WHERE id=? AND deleted_at IS NULL", (str(identity),)
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                "SELECT * FROM profiles WHERE (id=? OR name=?) AND deleted_at IS NULL",
+                (identity, identity),
+            ).fetchall()
+        if not rows:
+            raise AppError("not_found", "Profile not found.", 3)
+        if len(rows) != 1:
+            raise AppError(
+                "ambiguous_profile",
+                "Profile selector is ambiguous. Rename the matching profile.",
+                2,
+            )
+        return rows[0]
+
+    @staticmethod
+    def _profile(row: sqlite3.Row) -> ProfileRecord:
+        return ProfileRecord(
+            id=row["id"],
+            revision=row["revision"],
+            config=ProfileConfig.model_validate_json(row["config_json"]),
+        )
+
+    async def get_profile(self, identity: str | UUID) -> ProfileRecord:
+        return await self._run(
+            lambda connection: self._profile(self._profile_row(connection, identity))
+        )
+
+    @staticmethod
+    def _page_input(limit: int, cursor: str | None) -> str:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise AppError("pagination", "Page size must be between 1 and 500.", 2)
+        if cursor is None:
+            return ""
+        try:
+            if str(UUID(cursor)) != cursor:
+                raise ValueError
+        except (ValueError, TypeError, AttributeError):
+            raise AppError("pagination", "Invalid page cursor.", 2) from None
+        return cursor
+
+    async def list_profiles(
+        self, *, limit: int = 50, cursor: str | None = None
+    ) -> Page[ProfileRecord]:
+        after = self._page_input(limit, cursor)
+
+        def action(connection):
+            rows = connection.execute(
+                "SELECT * FROM profiles WHERE deleted_at IS NULL AND id>? ORDER BY id LIMIT ?",
+                (after, limit + 1),
+            ).fetchall()
+            return Page[ProfileRecord](
+                items=tuple(self._profile(row) for row in rows[:limit]),
+                next_cursor=rows[limit - 1]["id"] if len(rows) > limit else None,
             )
 
         return await self._run(action)
+
+    async def remove_profile(self, identity: str) -> str:
+        def action(connection):
+            row = self._profile_row(connection, identity)
+            connection.execute("UPDATE profiles SET deleted_at=? WHERE id=?", (_now(), row["id"]))
+            return row["id"]
+
+        return await self._run(action, write=True)
+
+    async def list_runs(
+        self, *, profile_id: str | None = None, limit: int = 50, cursor: str | None = None
+    ) -> Page[RunSummary]:
+        after = self._page_input(limit, cursor)
+
+        def action(connection):
+            rows = connection.execute(
+                "SELECT id,profile_id,state,cancel_requested,created_at,source_run_id,"
+                "json_extract(snapshot_json,'$.profile.target.name') AS profile_name FROM runs "
+                "WHERE id>? AND (? IS NULL OR profile_id=?) ORDER BY id LIMIT ?",
+                (after, profile_id, profile_id, limit + 1),
+            ).fetchall()
+            return Page[RunSummary](
+                items=tuple(RunSummary(**dict(row)) for row in rows[:limit]),
+                next_cursor=rows[limit - 1]["id"] if len(rows) > limit else None,
+            )
+
+        return await self._run(action)
+
+    async def list_findings(
+        self, run_id: str, *, limit: int = 50, cursor: str | None = None
+    ) -> Page[Finding]:
+        after = self._page_input(limit, cursor)
+
+        def action(connection):
+            self._run_row(connection, run_id)
+            rows = connection.execute(
+                "SELECT id,document_json FROM findings WHERE run_id=? AND id>? ORDER BY id LIMIT ?",
+                (run_id, after, limit + 1),
+            ).fetchall()
+            return Page[Finding](
+                items=tuple(
+                    Finding.model_validate_json(row["document_json"]) for row in rows[:limit]
+                ),
+                next_cursor=rows[limit - 1]["id"] if len(rows) > limit else None,
+            )
+
+        return await self._run(action)
+
+    async def read_finding(self, finding_id: str) -> Finding:
+        def action(connection):
+            row = connection.execute(
+                "SELECT document_json FROM findings WHERE id=?", (finding_id,)
+            ).fetchone()
+            if row is None:
+                raise AppError("not_found", "Finding not found.", 3)
+            return Finding.model_validate_json(row[0])
+
+        return await self._run(action)
+
+    async def request_cancel(self, run_id: str) -> RunView:
+        def action(connection):
+            row = self._run_row(connection, run_id)
+            if row["state"] not in {"queued", "running"}:
+                raise AppError("invalid_transition", "A terminal run cannot be cancelled.", 2)
+            if not row["cancel_requested"]:
+                if row["state"] == "queued":
+                    connection.execute(
+                        "UPDATE runs SET state='cancelled',cancel_requested=1,"
+                        "reason='user_cancelled',finished_at=? "
+                        "WHERE id=?",
+                        (_now(), run_id),
+                    )
+                    self._event(
+                        connection,
+                        run_id,
+                        "run.finalized",
+                        state="cancelled",
+                        reason="user_cancelled",
+                    )
+                else:
+                    connection.execute("UPDATE runs SET cancel_requested=1 WHERE id=?", (run_id,))
+                    self._event(connection, run_id, "run.cancel_requested")
+            return self._view(connection, self._run_row(connection, run_id))
+
+        return await self._run(action, write=True)
 
     async def finalize(
         self, run_id: str, state: RunState, reason: str | None, *, instance_id: str

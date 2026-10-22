@@ -1,11 +1,16 @@
 import argparse
+import asyncio
 import json
 import sys
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from asclepius import __version__
-from asclepius.config import load_evaluator, load_target
-from asclepius.domain import AppError
+from asclepius.config import data_directory, load_evaluator, load_plan, load_target
+from asclepius.domain import AppError, RunState
+from asclepius.services import EvaluationService
+from asclepius.storage import Repository
 
 
 class ArgumentParser(argparse.ArgumentParser):
@@ -27,15 +32,40 @@ def parser() -> argparse.ArgumentParser:
     validate.add_argument(
         "--json", action="store_true", dest="json_output", default=argparse.SUPPRESS
     )
+    commands.add_parser("init", help="Initialize a new local SQLite data directory.")
+    targets = commands.add_parser("targets", help="Manage application profiles.")
+    target_actions = targets.add_subparsers(dest="action", required=True)
+    for name in ("add", "edit"):
+        action = target_actions.add_parser(name)
+        action.add_argument("profile")
+        action.add_argument("--config", type=Path, required=True)
+    target_list = target_actions.add_parser("list")
+    pagination(target_list)
+    for name in ("show", "remove"):
+        target_actions.add_parser(name).add_argument("profile")
+    submit = commands.add_parser("run", help="Queue a complete evaluation plan.")
+    submit.add_argument("profile")
+    source = submit.add_mutually_exclusive_group(required=True)
+    source.add_argument("--plan", type=Path)
+    source.add_argument("--pack")
+    submit.add_argument("--evaluator", type=Path, required=True)
+    runs = commands.add_parser("runs", help="Inspect and control persisted runs.")
+    run_actions = runs.add_subparsers(dest="action", required=True)
+    run_list = run_actions.add_parser("list")
+    pagination(run_list)
+    run_list.add_argument("--profile", help="Stable profile ID, including removed profiles.")
+    for name in ("show", "cancel", "retry", "watch"):
+        run_actions.add_parser(name).add_argument("run_id")
+    findings = commands.add_parser("findings", help="Inspect saved findings.")
+    finding_actions = findings.add_subparsers(dest="action", required=True)
+    finding_list = finding_actions.add_parser("list")
+    finding_list.add_argument("--run", required=True, dest="run_id")
+    pagination(finding_list)
+    finding_actions.add_parser("show").add_argument("finding_id")
     for name in (
-        "init",
         "storage",
-        "targets",
         "daemon",
         "checks",
-        "run",
-        "runs",
-        "findings",
         "compare",
         "report",
     ):
@@ -44,13 +74,110 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def pagination(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--limit", type=int, default=50)
+    command.add_argument("--cursor")
+
+
+def emit(data, json_output: bool) -> None:
+    content = data.model_dump(mode="json") if isinstance(data, BaseModel) else data
+    envelope = {"schema_version": 1, "ok": True, "data": content}
+    print(
+        json.dumps(envelope if json_output else content, indent=None if json_output else 2),
+        flush=True,
+    )
+
+
+async def dispatch(options, json_output: bool) -> None:
+    repo = Repository(data_directory(options.data_dir))
+    service = EvaluationService(repo)
+    command = options.command
+    if command == "init":
+        await repo.initialize()
+        data = {"initialized": True}
+    elif command == "targets":
+        if options.action == "add":
+            config = load_target(options.config)
+            if options.profile != config.target.name:
+                raise AppError(
+                    "profile_name", "Profile name must match the target configuration.", 2
+                )
+            data = {"id": await service.save_profile(config)}
+        elif options.action == "edit":
+            existing = await repo.get_profile(options.profile)
+            data = {
+                "id": await service.save_profile(
+                    load_target(options.config), profile_id=str(existing.id)
+                )
+            }
+        elif options.action == "remove":
+            data = {"id": await repo.remove_profile(options.profile), "removed": True}
+        elif options.action == "show":
+            data = await repo.get_profile(options.profile)
+        else:
+            data = await repo.list_profiles(limit=options.limit, cursor=options.cursor)
+    elif command == "run":
+        if options.pack is not None:
+            raise AppError(
+                "pack_unavailable",
+                "Built-in packs are not implemented. Supply --plan with complete checks "
+                "and role prompts.",
+                2,
+            )
+        plan = load_plan(options.plan)
+        identity = await service.submit(
+            options.profile, load_evaluator(options.evaluator), plan.checks, prompts=plan.prompts
+        )
+        data = {"id": identity, "state": "queued", "meaning": "Accepted, not executed."}
+    elif command == "runs":
+        if options.action == "list":
+            data = await repo.list_runs(
+                profile_id=options.profile, limit=options.limit, cursor=options.cursor
+            )
+        elif options.action == "show":
+            data = await repo.read_run(options.run_id)
+        elif options.action == "cancel":
+            data = await service.cancel(options.run_id)
+        elif options.action == "retry":
+            data = {"id": await service.retry(options.run_id), "state": "queued"}
+        else:
+            await watch(repo, options.run_id, json_output)
+            return
+    elif command == "findings":
+        if options.action == "list":
+            data = await repo.list_findings(
+                options.run_id, limit=options.limit, cursor=options.cursor
+            )
+        else:
+            data = await repo.read_finding(options.finding_id)
+    else:
+        raise AppError("not_implemented", "This command is not implemented yet.")
+    emit(data, json_output)
+
+
+async def watch(repo: Repository, run_id: str, json_output: bool) -> None:
+    after = 0
+    while True:
+        for event in await repo.events(run_id, after=after):
+            emit(event, json_output)
+            after = event["sequence"]
+        view = await repo.read_run(run_id)
+        if view.state not in {RunState.QUEUED, RunState.RUNNING}:
+            for event in await repo.events(run_id, after=after):
+                emit(event, json_output)
+            emit({"id": run_id, "state": view.state.value}, json_output)
+            return
+        await asyncio.sleep(0.25)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     json_output = "--json" in args
     try:
-        options = parser().parse_args(args)
+        options = parser().parse_args([argument for argument in args if argument != "--json"])
         if options.command != "config":
-            raise AppError("not_implemented", "This command is not implemented yet.")
+            asyncio.run(dispatch(options, json_output))
+            return 0
         loader = load_evaluator if options.kind == "evaluator" else load_target
         loader(options.path)
         if json_output:
@@ -72,3 +199,5 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(str(error), file=sys.stderr)
         return error.exit_code
+    except KeyboardInterrupt:
+        return 130

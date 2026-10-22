@@ -47,8 +47,9 @@ not identify a source folder or automatically start its target application.
 
 ## Intended workflow
 
-The following commands illustrate the agreed interaction; they do not exist yet.
-Exact subcommands, arguments, and flags remain to be designed.
+The following commands illustrate the agreed full interaction. Profile management and
+persisted inspection exist; daemon startup, built-in packs, evaluation execution, and
+reports do not. See [development](development.md) for implemented syntax and limitations.
 
 ```text
 asclepius targets add my-rag-app ...connection details...

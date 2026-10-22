@@ -66,6 +66,20 @@ The control identity used by repository tests is a fixture, not proof of a real 
 CLI profile/submission commands, actual network execution, crash timing at the network
 boundary, pending/failed stage invocation records, and end-to-end recovery remain unverified.
 
+## Recorded CLI management
+
+The [Task 3 record](verification/evidence/cli-management.json) covers 91 passing tests on
+WSL and native Windows. It includes 24 new service/CLI cases, two concurrent profile clients,
+controlled-ready submission, immutable retries, stopped reads, cancellation intent, and
+watch interruption. Regression tests cover removed-identity lookup, concurrent rename/removal,
+incomplete retry plans, consistent cancellation reasons, deeply nested JSON errors, and
+initialization that preserves an existing file selected as the data directory.
+
+The rebuilt wheels pass `backend/scripts/verify_cli_management.py` outside the source tree
+on both platforms. The script verifies installed imports and real profile commands. It
+does not start a daemon or send provider requests. Controlled readiness and injected
+KeyboardInterrupt tests do not establish actual daemon ownership or terminal-close survival.
+
 ## Feature-map convention
 
 Each feature file has four sections: sub-features, user entry point, terminal driving,

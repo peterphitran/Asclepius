@@ -1,6 +1,8 @@
 # Runs
 
-Status: planned. Give each evaluation an identity and expose its persisted progress and outcome.
+Status: supplied-plan submission, saved-state inspection, watch, cancellation intent, and
+linked retry commands are implemented. Tests supply controlled readiness; real daemon
+startup and evaluation execution remain unimplemented.
 
 ## Sub-features
 
@@ -15,7 +17,8 @@ Status: planned. Give each evaluation an identity and expose its persisted progr
 
 Submit against a saved profile, keep the returned run ID, and inspect it from another
 process. The [backend design](../specs/backend-design.md) defines states and retry identity;
-exact command syntax remains undecided.
+use `run <profile> --plan <plan.json> --evaluator <evaluator.toml>` and
+`runs list|show|watch|cancel|retry`. See [command details](../development.md#submit-a-complete-plan).
 
 ## Driving it with the terminal
 

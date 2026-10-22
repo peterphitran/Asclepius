@@ -1,6 +1,7 @@
 # Findings
 
-Status: planned. Inspect the evidence and reproduction context behind a potential weakness.
+Status: paginated saved-finding reads and full finding inspection are implemented.
+The evaluation pipeline that produces real findings is not implemented yet.
 
 ## Sub-features
 
@@ -12,7 +13,8 @@ Status: planned. Inspect the evidence and reproduction context behind a potentia
 ## How to get to it (user POV)
 
 Choose a run, inspect its findings, and open the evidence for a selected result.
-Exact navigation and inspection commands remain to be designed.
+Use `findings list --run <run-id>` and `findings show <finding-id>`. These reads work
+while the daemon is stopped. Lists have the shared `--limit` and `--cursor` options.
 
 ## Driving it with the terminal
 
@@ -24,7 +26,8 @@ findings, missing IDs, partial failures, and multiple runs of the same target.
 
 - Execution errors must remain distinguishable from findings.
 - Evidence can contain target content and credentials.
-- Severity, confidence, and review semantics need a generic result schema.
+- Generic finding contracts retain severity, judgment identity, and evidence. Independent
+  manual review semantics remain undecided.
 - Cite document/chunk identities, corpus version, query, retrieved ranks, and answer
   evidence when applicable. A citation label alone does not establish grounding.
 - Redact configured secrets before persistence and display evidence as untrusted text.

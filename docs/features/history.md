@@ -1,6 +1,7 @@
 # History and Comparisons
 
-Status: planned. Inspect several applications and repeated runs across terminal sessions.
+Status: paginated run history and full saved-run inspection are implemented. Comparisons
+and actual daemon restart verification remain planned.
 
 ## Sub-features
 
@@ -14,7 +15,9 @@ Status: planned. Inspect several applications and repeated runs across terminal 
 
 List prior runs, choose one for details, or select a pair for comparison.
 The [backend design](../specs/backend-design.md) defines immutable run snapshots and
-linked retries. Filtering, comparison syntax, and exact schema remain implementation work.
+linked retries. Use `runs list --limit <1-500> --cursor <next-cursor>` and
+`runs show <run-id>`. Filter by stable identity with `runs list --profile <profile-id>`.
+Lists use ascending UUID order, not execution time. Comparisons remain unimplemented.
 
 ## Driving it with the terminal
 

@@ -267,6 +267,10 @@ def test_judgment_finding_and_repeated_writes_preserve_provenance(tmp_path):
         assert len(view.findings) == 1
         assert view.findings[0].description == "Controlled finding"
         assert view.judgments[0].evidence[0].observation_id == view.observations[0].id
+        page = await repo.list_findings(str(snapshot.id))
+        assert page.items == (finding,)
+        assert page.next_cursor is None
+        assert await repo.read_finding(str(finding.id)) == finding
 
     run(scenario())
 

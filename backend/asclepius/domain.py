@@ -332,6 +332,44 @@ class PromptSnapshot(Contract):
     content: str
 
 
+class SubmissionPlan(Contract):
+    schema_version: Literal[1] = 1
+    checks: Annotated[tuple[CheckDefinition, ...], Field(min_length=1)]
+    prompts: tuple[PromptSnapshot, ...]
+
+    @model_validator(mode="after")
+    def validate_plan(self) -> "SubmissionPlan":
+        if len({check.id for check in self.checks}) != len(self.checks):
+            raise ValueError("Check identities must be unique.")
+        roles = {"selector", "generator", "judge", "reporter"}
+        if len(self.prompts) != 4 or {prompt.role for prompt in self.prompts} != roles:
+            raise ValueError("Exactly one prompt per role is required.")
+        if any(not prompt.content.strip() for prompt in self.prompts):
+            raise ValueError("Prompt content cannot be blank.")
+        return self
+
+
+class ProfileRecord(Contract):
+    id: UUID
+    revision: PositiveInt
+    config: ProfileConfig
+
+
+class RunSummary(Contract):
+    id: UUID
+    profile_id: UUID
+    profile_name: str
+    state: RunState
+    cancel_requested: bool
+    created_at: UtcTime
+    source_run_id: UUID | None = None
+
+
+class Page[T](Contract):
+    items: tuple[T, ...]
+    next_cursor: str | None = None
+
+
 class RunSnapshot(Contract):
     schema_version: Literal[1] = 1
     id: UUID = Field(default_factory=uuid4)

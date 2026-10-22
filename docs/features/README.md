@@ -2,7 +2,8 @@
 
 Behavior coverage for the project defined in [product scope](../product.md).
 The feature pages describe intended CLI actions and the evidence needed to verify them.
-All CLI features are planned; use [implementation status](../status.md) for existing code.
+Profiles and persisted run/finding inspection have implementations. Evaluation execution
+remains planned; use [implementation status](../status.md) for the tested boundaries.
 
 | Feature | User outcome |
 | --- | --- |
@@ -20,11 +21,13 @@ For a focused change, open the affected feature and relevant journey. For a broa
 follow this order and finish with journeys. Shared preconditions, proof conventions,
 and existing smoke evidence live in [verification](../verification.md).
 
-Exact CLI syntax is undecided; the command sketch is in [product workflow](../product.md).
+Implemented command syntax is in [development](../development.md); the intended full
+workflow is in [product scope](../product.md).
 The [backend design](../specs/backend-design.md) defines proposed lifecycle and control defaults.
 The [RAG design](../specs/rag-testing.md) separates chat, retrieval, and ingestion coverage.
 The [design review](../specs/design-review.md) tracks proposed defaults and open decisions.
-Status labels used in feature pages are **planned** and **design pending**. Neither means
-implemented or verified. Update a page's entry points and proof when its code becomes usable.
+Each feature page states which parts are implemented and which remain planned. A partial
+implementation does not establish the full user journey. Update entry points and evidence
+when behavior becomes usable.
 
 Existing HTTP operations are documented separately in the [API reference](../reference/existing-api.md).
