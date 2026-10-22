@@ -10,10 +10,12 @@
 
 **Spec:** [Backend design](../specs/backend-design.md), [pipeline](../specs/evaluation-pipeline.md), [product](../product.md), [feature map](../features/README.md). [RAG design](../specs/rag-testing.md) is a later capability milestone, not implemented by this plan.
 
-Status: implementation started on `codex/cli-evaluator`. Tasks 1 through 3 are verified in
+Status: implementation started on `codex/cli-evaluator`. Tasks 1 through 4 are verified in
 [the foundation evidence](../verification/evidence/cli-foundation.json) and
 [the storage evidence](../verification/evidence/cli-storage.json), and
-[the management evidence](../verification/evidence/cli-management.json). Tasks 4 through 12 remain pending.
+[the management evidence](../verification/evidence/cli-management.json), and
+[the daemon evidence](../verification/evidence/cli-daemon.json). Tasks 5 through 12 remain pending.
+Task 4 verifies control and budget components, not queued execution or physical terminal closure.
 
 ## Global Constraints
 
@@ -299,26 +301,59 @@ Task 4 still owns process lifetime locks, network-store rejection, and migration
 ### Task 4: Manual daemon, OS ownership, and outbound budgets
 
 **Files:** Create `backend/asclepius/{process,daemon,limits}.py`,
-`backend/tests/cli/{test_daemon_process,test_limits,test_maintenance}.py`; extend storage/CLI.
+`backend/asclepius/{maintenance,paths}.py`, `migrations/002_daemon_pid.sql`,
+`backend/tests/cli/{test_daemon_process,test_limits,test_maintenance}.py`, and
+`backend/scripts/verify_daemon.py`; extend storage/CLI.
 
-**Interfaces:** `start_daemon(data_dir: Path) -> DaemonStatus`, async
-`serve(data_dir: Path) -> None`, async `BudgetManager.reserve(run_id: str, kind: str, max_output: int) -> BudgetReservation`,
-async `BudgetManager.slot(resource_key: str, kind: str)` context manager.
+**Interfaces:** Sync `start_daemon(data_dir: Path, *, timeout: float = 15) -> DaemonStatus`,
+`daemon_status(data_dir: Path) -> DaemonStatus`, `stop_daemon(data_dir: Path, *, timeout: float = 15) -> DaemonStatus`,
+and `migrate_storage(data_dir: Path, *, timeout: float = 5) -> int`.
+Async `serve(data_dir: Path, *, instance_id: str) -> None` receives the parent-generated UUID.
+`BudgetManager(repo, instance_id, *, limits: Limits | None = None)` exposes async
+`reserve(run_id: str, kind: str, max_output: int) -> BudgetReservation`, `dispatch`, `settle`, `release`,
+and `slot(snapshot: RunSnapshot, kind: Kind, *, role: str | None = None)` / `run_slot(snapshot)` context managers.
 Repository extends Task 2 readiness persistence and adds async `control() -> DaemonStatus`,
-`heartbeat(instance_id: str) -> None`, `request_stop() -> None` and persisted reservation operations.
+`heartbeat(instance_id: str) -> None`, `request_stop(instance_id: str) -> None`,
+`set_stopped(instance_id: str) -> None`, `active_count(instance_id: str) -> int`,
+`drain_operations() -> None`, `execution_checkpoint`, `reserve_budget`, and `change_reservation`.
 
-- [ ] Write process tests for duplicate start, stale PID/heartbeat, readiness only after lock/schema,
+Grounding and independent review accepted these refinements. PID is added by an explicit
+v1-to-v2 migration; new initialization applies both SQL revisions transactionally. Maintenance
+owns schema changes directly under exclusive locks rather than reentering repository locks.
+Daemon startup holds instance EX, maintenance SH, and a generation-specific readiness lock.
+Public responsiveness requires that same UUID's readiness lease and fresh heartbeat, so a new
+owner blocked on SQLite cannot borrow an old ready record. Status probes locks only after
+releasing its repository read transaction. Lock files remain; their existence is not ownership.
+
+The loop deliberately never claims queued work or calls interruption recovery yet.
+It reports `execution_available: false`. Tasks 7/8 add execution and restart recovery.
+Task 5/7 must inject one shared manager into all transports/workers. Slots derive destination
+and origin from HTTPX-normalized wire URLs, including host/default-port/trailing-dot normalization.
+Explicit resource keys may add grouping but never replace the destination gate.
+Rate buckets apply independently to normalized origin and credential reference across origins.
+Reservations count reserved/dispatched/settled against caps; only unused reserved work can
+release allowance. Exhaustion commits a reason/event and prevents successful finalization.
+Repeated cancellation is deferred until outstanding database workers finish before locks release.
+Cleanup is explicitly unsupported until a separate cap exists; evaluation allowance is not reused.
+Physical terminal-close acceptance remains Task 10. Retain the recorded one-off native
+creator-exit failure even though reruns and ten extra reviewer probes passed.
+Final trail review clarified the existing submission contract: enqueue gates on persisted
+ready state and a heartbeat up to ten seconds old, not the OS readiness lease. A hard crash
+can leave a bounded queued-acceptance window; accepted work waits for manual restart.
+Generation leases protect status/start. Do not claim immediate crash detection for enqueue.
+
+- [x] Write process tests for duplicate start, stale PID/heartbeat, readiness only after lock/schema,
   start failure diagnostics, stop timeout without kill, and stopped-daemon reads. Test aliases
   sharing a target resource and shared provider key cannot evade limits. Start with tiny
   test-only limits; measure observed concurrent fixture calls, not only semaphore counters.
-- [ ] Test maintenance lock contention: daemon holds shared maintenance access, every CLI DB
+- [x] Test maintenance lock contention: daemon holds shared maintenance access, every CLI DB
   operation acquires shared access, migrations require exclusive access with daemon stopped.
   Lock order for startup/migration: instance lock, then maintenance lock; ordinary CLI DB
   operations never acquire the instance lock while holding maintenance access.
   Await outstanding repository thread operations before releasing lifetime locks: cancelling
   an awaiting coroutine does not stop its underlying `asyncio.to_thread` database operation.
-- [ ] Run `python -m pytest tests/cli/test_daemon_process.py tests/cli/test_limits.py tests/cli/test_maintenance.py -q`; expect failures.
-- [ ] Implement portalocker lifetime instance lock and maintenance locks. Canonicalize paths;
+- [x] Run `python -m pytest tests/cli/test_daemon_process.py tests/cli/test_limits.py tests/cli/test_maintenance.py -q`; expect failures.
+- [x] Implement portalocker lifetime instance lock and maintenance locks. Canonicalize paths;
   default Windows `%LOCALAPPDATA%/Asclepius`, WSL/Linux `$XDG_DATA_HOME/asclepius` or
   `~/.local/share/asclepius`; never share Windows/WSL state. Reject network-store configuration.
   Launch using `sys.executable`, argument arrays, no shell; POSIX `start_new_session=True`,
@@ -326,11 +361,11 @@ Repository extends Task 2 readiness persistence and adds async `control() -> Dae
   not an ownership mechanism. Start waits for this child's fresh instance ID, not stale ready data.
   `init` initializes only new stores; `storage migrate` acquires exclusive instance and
   maintenance locks before applying versioned upgrades. Never auto-upgrade on an ordinary read.
-- [ ] Implement durable readiness/drain plus reservations and cancellation-aware rate waits.
+- [x] Implement durable readiness/drain plus reservations and cancellation-aware rate waits.
   Keep control/heartbeat independent of execution capacity; no network call in SQL transaction.
   Exceeding limits stops new dispatch and records `budget_exhausted`, never a pass.
-- [ ] Repeat process tests; expect pass. Tasks 7/8 complete actual execution/recovery proofs.
-- [ ] Commit owned changes: `feat: run a manually controlled bounded daemon`.
+- [x] Repeat process tests; expect pass. Tasks 7/8 complete actual execution/recovery proofs.
+- [x] Commit owned changes: `feat: run a manually controlled bounded daemon`.
 
 ### Task 5: Real Groq target adapter and evaluator gateway
 

@@ -1,6 +1,8 @@
 # Background Daemon
 
-Status: planned. Manually control detached execution with bounded parallel work.
+Status: manual detached control, readiness, heartbeat, and graceful stop are implemented.
+The budget manager is tested separately. Scheduling, model execution, restart recovery,
+and physical terminal-close acceptance are not implemented or fully verified.
 
 ## Sub-features
 
@@ -15,7 +17,12 @@ Status: planned. Manually control detached execution with bounded parallel work.
 Start the daemon before submitting runs and stop it when finished. The
 [backend design](../specs/backend-design.md) defines one instance per data directory,
 readiness before acceptance, and graceful stop by draining active work. Submission
-while stopped fails without creating a run; repeated start identifies the existing instance.
+with stopped/draining/stale control fails without creating a run; repeated start identifies
+the existing instance. Abrupt loss can leave up to ten seconds of fresh persisted readiness,
+so submission may still accept queued work that waits for manual restart.
+Use `daemon start`, `daemon status`, and `daemon stop --timeout <seconds>` with the shared
+`--data-dir`. Current status includes `execution_available: false`: accepted runs stay queued.
+See [daemon commands and migration](../development.md#control-the-local-daemon).
 
 ## Driving it with the terminal
 
@@ -29,6 +36,10 @@ that incomplete runs are marked interrupted, while queued runs remain available.
 - Computer sleep and shutdown interrupt computation.
 - A startup message alone does not prove a usable worker.
 - A stale heartbeat alone cannot prove that instance ownership has been released.
+- Readiness requires both lifetime instance ownership and the current UUID's readiness
+  lock. PID and a fresh old row cannot establish a new child's readiness.
+- A timed-out stop never kills the process. A startup timeout may leave a child starting;
+  inspect status. Do not delete lock files to force ownership.
 - Per-run bounds are insufficient: enforce global, model-provider, target, and mutable
   corpus limits across all profiles. Keep control operations responsive under saturation.
 - Cancellation and drain must not strand invisible uploaded fixtures; surface the
@@ -37,3 +48,6 @@ that incomplete runs are marked interrupted, while queued runs remain available.
   calls explicitly; detachment is not a promise of uninterrupted execution.
 - Reserve cleanup capacity/budget separately from evaluation limits. Graceful shutdown
   waits for bounded cleanup or records unresolved resources with a visible warning.
+- Cleanup reservations currently return unsupported; evaluation allowance is not a substitute.
+- One native creator-exit check failed during review and then passed repeated probes.
+  Physical terminal-close behavior remains an explicit acceptance item.

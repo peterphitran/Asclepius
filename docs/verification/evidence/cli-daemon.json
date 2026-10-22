@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-22T15:32:35Z",
+  "branch": "codex/cli-evaluator",
+  "parent_commit": "44f395b",
+  "source_state": "Task 4 working tree before its implementation commit",
+  "scope": "Manual daemon control, local schema migration, and separately tested budget components. No queued evaluation execution.",
+  "tests": {
+    "command": "python -m pytest -o addopts= -q",
+    "wsl_python": "3.12.3",
+    "windows_python": "3.13",
+    "wsl_result": "122 passed, 1 inherited warning",
+    "windows_result": "121 passed, 1 skipped, 1 inherited warning",
+    "windows_skip": "Actual WSL symlink-to-Windows-mount rejection test requires WSL",
+    "prior_cases": 91,
+    "task4_cases": 31,
+    "daemon_cases": 10,
+    "budget_cases": 11,
+    "maintenance_cases": 10,
+    "warning": "Existing StarletteDeprecationWarning about httpx with starlette.testclient"
+  },
+  "red_before_green": [
+    "New daemon, limits, and maintenance tests initially failed collection because their modules did not exist",
+    "Exhausted run finalization did not raise and allowed COMPLETED before the guard",
+    "HTTPX dot-path aliases reached the same wire URL with peak concurrency 2 despite destination cap 1",
+    "A restarted child holding the instance lock but blocked on SQLite let concurrent start return the old ready UUID/PID",
+    "One credential reference at different origins entered a second slot despite RPM 1",
+    "Trailing-dot DNS host produced a different canonical origin before normalization",
+    "Repeated cancellation completed repository/drain work before a blocked database thread exited",
+    "Held SQLite writer returned storage_error instead of bounded actionable storage_busy"
+  ],
+  "verified_behavior": [
+    "Manual detached start obtains lifetime instance and maintenance ownership before readiness",
+    "Fresh UUID readiness lease prevents borrowing old ready rows; PID remains diagnostic",
+    "Sequential and concurrent starts converge on one live instance",
+    "Early child exit returns sanitized startup diagnostics; stale heartbeat with live lock does not launch a replacement",
+    "Creator CLI can exit while its child retains ownership; POSIX session ID equals daemon PID",
+    "Stop drains active owned work, rejects new acceptance, times out without kill, and preserves queued work",
+    "Current daemon never claims queued runs and reports execution_available=false",
+    "Explicit v1-to-v2 upgrade preserves populated profile/run snapshots and establishes WAL; repeated migration is harmless",
+    "Ordinary reads/start/init reject v1 without upgrading; live daemon excludes migration and initialization",
+    "Failed migration rolls back schema/version; writer contention obeys configured SQLite timeout",
+    "Repository and serve retain ownership through repeated cancellation until database workers finish",
+    "UNC-style paths are rejected on both platforms; actual WSL symlink to Windows-mounted storage is rejected",
+    "Live loopback requests observe per-destination serialization, distinct-destination overlap, and dot-alias serialization",
+    "Origin and credential-reference rate gates are independent; reference gates are shared across origins",
+    "Cancellation/deadline/owner checks reject new dispatch while allowing valid active reservation settlement/release",
+    "Reserved, dispatched, and settled allowance stays counted; only unused reserved allowance releases",
+    "Exhaustion commits its reason/event and cannot finalize as completed; cleanup is explicitly unsupported pending separate allowance"
+  ],
+  "packaging": {
+    "ruff": "python -m ruff check asclepius tests/cli scripts: passed",
+    "format": "python -m ruff format --check asclepius tests/cli scripts: 26 files already formatted",
+    "wheel_build_install": "Succeeded on native Windows and WSL after final runtime changes",
+    "installed_probe": "python <checkout>/backend/scripts/verify_daemon.py <checkout>/backend/examples",
+    "installed_probe_result": "Both platforms passed outside source with site-packages imports, real CLI start/duplicate/queued submission/stop/stopped reads, synthetic environment credentials, and temporary native local stores",
+    "cleanup": "Probe-owned daemons stopped; Windows probe waited on its child process handle before temporary-directory cleanup; probe returned successfully",
+    "dependencies": "No new dependency or lock changes; uses existing HTTPX, portalocker win32 extra, and standard library"
+  },
+  "review": {
+    "grounding": "gpt-6.1-sol",
+    "comment_gate": "gpt-6-luna reported zero flags on scoped Task 4 code/tests",
+    "interrupted_reviewer": "First gpt-6-astra review stopped at usage limit; its partial budget-finalization observation was retained, not counted as a completed verdict",
+    "independent_reviewer": "Fresh gpt-6-astra replacement completed review",
+    "reviewer_findings": [
+      "Critical destination dot-path alias bypass",
+      "Critical stale-ready generation race",
+      "Critical credential-reference RPM split across origins",
+      "Repeated-cancellation ownership lifetime warning"
+    ],
+    "disposition": "All four completed-review findings were reproduced in retained tests, fixed, and covered by final platform suites. Trailing-dot host normalization and migration timeout regressions are retained too.",
+    "scope": "One independent code reviewer, not a diverse-model panel; final suite and installed-wheel checks were run by the implementer",
+    "final_trail_review": "gpt-6.1-sol checked supplied digest, source, and artifacts, not a full transcript or rerun. It identified an overstrong unavailable-daemon submission claim and an incomplete audit evidence pointer. Documentation now states bounded persisted-readiness acceptance after abrupt loss; an appended correction points to maintenance cancellation tests."
+  },
+  "uncertainties": [
+    "One native creator-exit test in reviewer testing lost daemon PID 24972, leaving ready metadata and an empty log. Isolated/full reruns and ten additional reviewer probes passed. Cause remains unconfirmed; not silently classified as resolved.",
+    "Physical terminal-close, computer sleep/shutdown, and live-model acceptance remain Task 10 gates",
+    "Submission checks persisted ready state and heartbeat freshness, not the OS generation lease. Abrupt owner loss may permit queued acceptance for up to ten seconds; work waits for manual restart. Generation leases protect status/start, not atomic live-owner validation during enqueue.",
+    "An early HTTP concurrency test used responses too short to expose overlap and failed with peak 1 for distinct destinations. A bounded fixture overlap gate and shared HTTP client corrected the measurement; those earlier full suites were not green."
+  ],
+  "remaining_work": [
+    "Task 5 must connect the shared manager to real target/provider transport",
+    "Task 7 must create one configured manager for all daemon workers and add actual bounded scheduling/coordinator execution",
+    "Task 8 must integrate lost-owner interruption/recovery; current control loop leaves historical orphan rows untouched",
+    "Cleanup budgets and RAG mutation cleanup remain unsupported rather than borrowing evaluation allowance",
+    "No Groq/Ollama response, agent execution, broad-pack effectiveness, report/chart, comparison, or RAG ingestion/retrieval verified"
+  ],
+  "reviewer_artifacts_retained": [
+    "C:/Users/ptran/AppData/Local/Temp/asclepius-review-start-swsyp0ty",
+    "C:/Users/ptran/AppData/Local/Temp/asclepius-review-parent-exit-tni9xq_r"
+  ]
+}

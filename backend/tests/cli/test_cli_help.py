@@ -20,7 +20,7 @@ def test_module_help_does_not_need_api_database_or_credentials() -> None:
 
 
 def test_unimplemented_command_does_not_claim_success() -> None:
-    result = run_cli("daemon", "start", "--json")
+    result = run_cli("report", "unused-run", "--json")
     assert result.returncode == 5
     output = json.loads(result.stdout)
     assert output["schema_version"] == 1

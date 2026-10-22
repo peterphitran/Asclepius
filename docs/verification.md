@@ -80,6 +80,28 @@ on both platforms. The script verifies installed imports and real profile comman
 does not start a daemon or send provider requests. Controlled readiness and injected
 KeyboardInterrupt tests do not establish actual daemon ownership or terminal-close survival.
 
+## Recorded daemon control and budgets
+
+The [Task 4 record](verification/evidence/cli-daemon.json) covers 122 passing WSL tests and
+121 passing native Windows tests with one WSL-only skip. It verifies real manual daemon
+start/duplicate/stop, generation-bound readiness, stopped reads, explicit populated v1
+migration, lock exclusion, cancellation-safe worker drain, and separately exercised budgets.
+Loopback HTTP handlers record destination concurrency; fixtures do not substitute for model
+evaluation. Shared origin/reference rate gates reject alias bypasses.
+
+Both rebuilt wheels pass `backend/scripts/verify_daemon.py` outside the source tree. It
+drives the real CLI with synthetic credential references, submits to a real ready control
+daemon, verifies that the run stays queued, stops that daemon, and reads/cancels while stopped.
+Its temporary stores are removed after its owned child exits.
+
+One native creator-exit test failed during review and then passed its reruns and ten extra
+probes. That unexplained failure remains recorded. Physical terminal-close, sleep/shutdown,
+real provider calls, and scheduler/recovery integration are not proved by Task 4.
+The daemon reports `execution_available: false`; no queued run is dispatched yet.
+Submission uses persisted heartbeat freshness, so abrupt owner loss can leave up to ten
+seconds of queued acceptance before the record becomes stale. Status/start use the OS
+generation lease; enqueue is not an immediate crash detector.
+
 ## Feature-map convention
 
 Each feature file has four sections: sub-features, user entry point, terminal driving,

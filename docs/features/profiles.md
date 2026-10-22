@@ -1,7 +1,7 @@
 # Application Profiles
 
 Status: profile CRUD and SQLite history preservation are implemented. Supplied-plan
-submission is tested with controlled readiness, not an actual daemon. See
+submission can use the real control daemon, but it does not execute evaluations yet. See
 [development](../development.md#manage-local-profiles-and-inspect-history).
 
 ## Sub-features

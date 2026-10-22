@@ -387,6 +387,9 @@ class DaemonStatus(Contract):
     state: Literal["stopped", "starting", "ready", "draining"] = "stopped"
     pid: PositiveInt | None = None
     heartbeat_at: UtcTime | None = None
+    owned: bool = False
+    responsive: bool = False
+    execution_available: bool = False
 
 
 class BudgetReservation(Contract):

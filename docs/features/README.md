@@ -2,7 +2,7 @@
 
 Behavior coverage for the project defined in [product scope](../product.md).
 The feature pages describe intended CLI actions and the evidence needed to verify them.
-Profiles and persisted run/finding inspection have implementations. Evaluation execution
+Profiles, manual daemon control, and persisted run/finding inspection have implementations. Evaluation execution
 remains planned; use [implementation status](../status.md) for the tested boundaries.
 
 | Feature | User outcome |

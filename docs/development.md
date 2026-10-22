@@ -1,7 +1,8 @@
 # Development
 
-See [status](status.md) for current implementation boundaries. Profile management and persisted
-run inspection work. Evaluation execution is not available yet. Configuration validation
+See [status](status.md) for current implementation boundaries. Profile management, manual
+daemon control, and persisted run inspection work. Evaluation execution is not available yet.
+Configuration validation
 works without a daemon, API server, or database service.
 
 ## CLI foundation
@@ -22,7 +23,7 @@ Use `requirements-cli-windows.lock` on native Windows. Locks were resolved with 
 3.12 on WSL and Python 3.13 on Windows. They currently include legacy dependencies too.
 Do not apply them to an unrelated environment or replace the original checkout's `.venv`.
 Validation checks secret references, not secret values or provider availability. No key
-is needed to validate the examples. Daemon, registry, comparison, and export commands still
+is needed to validate the examples. Registry, comparison, and export commands still
 exit 5 with `not_implemented`. Accepting a command name is not proof of evaluation execution.
 
 To regenerate a lock in its matching platform environment:
@@ -67,9 +68,13 @@ the future coordinator must honor it before dispatching more work.
 
 ## Submit a complete plan
 
-Submission requires a fresh ready daemon record. Task 4 has not implemented daemon startup,
-so normal submission currently returns exit 4 without inserting a run. Do not modify the
-database to manufacture readiness. Controlled readiness belongs only to isolated tests.
+Submission requires a fresh persisted ready record from a manually started daemon. Stopped,
+draining, or stale readiness returns exit 4 without inserting a run. A hard crash can leave
+that record fresh for up to ten seconds, during which queued acceptance can still succeed.
+That work waits for a manual restart; submission is not a synchronous OS-liveness guarantee.
+Do not modify the database to manufacture readiness.
+The current daemon accepts queued work but deliberately does not claim or execute it.
+Its status reports `execution_available: false` until the coordinator is implemented.
 
 The submission interface accepts complete checks and four role prompts from a bounded,
 versioned JSON file. The [custom example](../backend/examples/submission-plan.json) is synthetic
@@ -89,6 +94,54 @@ Successful submission means queued acceptance, not completed evaluation. Retry r
 failed, cancelled, or interrupted source and an active original profile. It creates a new ID
 linked to the source and preserves the saved configuration, checks, prompts, and limits.
 It can incur new requests and is not exact replay.
+
+## Control the local daemon
+
+```text
+asclepius --data-dir <local-directory> daemon start --json
+asclepius --data-dir <local-directory> daemon status --json
+asclepius --data-dir <local-directory> daemon stop --timeout 15 --json
+```
+
+Start is always explicit. The child detaches with redirected streams; duplicate starts
+identify the existing owner. Status reports persisted identity/PID, OS ownership, heartbeat
+responsiveness, and execution availability separately. PID alone is not ownership.
+A generation-specific readiness lock prevents a restarted child from borrowing an old
+instance's ready record while waiting on SQLite.
+
+Stop records drain intent, rejects new submissions/claims, and waits for active work owned
+by that instance. A timeout reports `daemon_draining` without killing it. Queued work remains
+queued. Startup/stop wait options accept positive values up to 60 seconds. Startup timeout
+does not kill a child that might still become ready; inspect status before trying again.
+Logs live under `<local-directory>/logs/daemon-<instance-id>.log`. Lock files remain as
+diagnostic artifacts; do not remove them to bypass an owner. OS locks release on process exit.
+Automated creator-process-exit checks are not physical terminal-close or shutdown acceptance.
+
+Native Windows defaults to `%LOCALAPPDATA%/Asclepius`. WSL/Linux uses
+`$XDG_DATA_HOME/asclepius` or `~/.local/share/asclepius`. Use separate native stores.
+UNC paths, mapped network drives, known remote filesystems, and Windows-mounted WSL
+storage are rejected, including symlinks resolving to those locations. Test data on WSL
+belongs under Linux storage such as `/tmp`, not the Windows checkout.
+
+## Upgrade existing local storage
+
+New stores use SQLite schema version 2. Existing version-1 stores require an explicit,
+stopped upgrade before reads or daemon start:
+
+```text
+asclepius --data-dir <local-directory> storage migrate --json
+```
+
+Migration acquires exclusive instance and maintenance locks. It adds PID diagnostics and
+preserves saved profiles/runs. Unsupported versions fail without reset. `init` never upgrades
+an existing store, and ordinary commands do not migrate implicitly. JSON output envelopes
+still use schema version 1; that is separate from the SQLite schema version.
+
+The shared `BudgetManager` has tested global, kind, destination, grouping, origin, and
+credential-reference gates plus durable call/completion reservations. It is not yet connected
+to daemon execution. Task 5 must use it for transport and Task 7 must share one manager
+across all workers. Cleanup operations remain unsupported until a separate budget contract
+exists. Dispatched/uncertain calls never refund their reservations.
 
 ## Python environment
 

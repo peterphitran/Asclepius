@@ -1,8 +1,8 @@
 # Runs
 
 Status: supplied-plan submission, saved-state inspection, watch, cancellation intent, and
-linked retry commands are implemented. Tests supply controlled readiness; real daemon
-startup and evaluation execution remain unimplemented.
+linked retry commands are implemented. A manually started daemon can accept supplied plans
+into the queue; actual evaluation execution remains unimplemented.
 
 ## Sub-features
 
@@ -31,6 +31,8 @@ returns a distinct linked run ID, and the source run remains unchanged.
 ## Gotchas
 
 - Saving a queued record does not establish dispatch.
+- Submission gates on persisted ready state and a heartbeat up to ten seconds old. Abrupt
+  owner loss can leave a bounded queued-acceptance window, not a promise of execution.
 - Progress must account for errors and incomplete checks.
 - Internal state-service tests cannot prove a complete user run.
 - A completed run can contain findings; completion does not mean the target passed.

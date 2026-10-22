@@ -5,6 +5,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from asclepius.domain import AppError, EvaluatorConfig, ProfileConfig, SubmissionPlan
+from asclepius.paths import local_directory
 
 
 def _read(path: Path) -> dict:
@@ -53,9 +54,9 @@ def load_plan(path: Path) -> SubmissionPlan:
 
 def data_directory(override: Path | None = None) -> Path:
     if override is not None:
-        return override.resolve()
+        return local_directory(override)
     if os.name == "nt":
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-        return (base / "Asclepius").resolve()
+        return local_directory(base / "Asclepius")
     base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return (base / "asclepius").resolve()
+    return local_directory(base / "asclepius")

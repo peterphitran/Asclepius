@@ -2,10 +2,10 @@
 
 Implementation checkpoint on 2026-10-22 UTC, branch `codex/cli-evaluator`.
 
-Tasks 1 through 3 implement CLI configuration, local initialization, profile management,
-persisted history/findings, watch, cancellation intent, and linked retries over SQLite.
-Supplied-plan submission is tested with controlled readiness. Evaluation execution and
-real daemon startup remain planned.
+Tasks 1 through 4 implement CLI management, SQLite history, and manual detached daemon
+control. Real ready-daemon submission accepts supplied plans into the queue. The daemon
+does not claim or execute them and reports `execution_available: false`. Budget components
+are tested separately; model transport and coordinator integration remain planned.
 
 This worktree starts from `d13e794` and carries the current documentation. The original
 checkout's frontend deletion and uncommitted backend lifecycle changes remain there,
@@ -20,12 +20,15 @@ discarding the original removal work.
 | CLI | `backend/asclepius/cli.py` | Help, configuration, initialization, profiles, run/history/finding reads, watch, cancellation, and retry commands. |
 | Services | `backend/asclepius/services.py` | Complete supplied-plan validation, credential presence checks, pinned snapshots, cancellation, and linked retries. No provider calls or implicit daemon launch. |
 | Local storage | `backend/asclepius/storage.py` | SQLite snapshots, paginated reads, profile tombstones, claims, fenced writes, atomic stage/evidence commits, and orphan interruption. Not daemon execution. |
+| Daemon control | `backend/asclepius/process.py`, `daemon.py` | Manual detached start, generation-bound readiness, heartbeat, duplicate exclusion, drain/stop. Leaves queued runs untouched. |
+| Bounds | `backend/asclepius/limits.py` | Shared request gates/rates and durable call/completion reservations; verified with real loopback requests but not wired to model execution. |
+| Local migrations | `backend/asclepius/maintenance.py`, `migrations/` | New schema v2 and explicit stopped v1 upgrade, OS/maintenance locking, rollback, and local-only path policy. |
 | API | `backend/app/api/` | Auth, target, campaign, sweep, finding, review, summary, and health routes. |
 | Data | `backend/app/models/`, `backend/app/db.py` | Organization-scoped Postgres records through async SQLAlchemy. |
 | Migrations | `backend/alembic/` | Inherited Postgres revisions; current database revision is not verified. |
 | Fixtures | `backend/app/seed.py` | Resets domain data and inserts simulated records. |
 | Infrastructure | `backend/docker-compose.yml` | Postgres and Redis containers; Redis is unused by execution. |
-| Tests | `backend/tests/` | Three inherited tests, 42 CLI foundation tests, 22 SQLite/storage cases, and 24 service/CLI management cases. |
+| Tests | `backend/tests/` | 91 prior cases and 31 daemon/budget/maintenance cases. Native Windows skips the WSL-only mount test. |
 
 Campaign creation stores queued records and returns an identifier. Nothing dispatches
 them to a worker or sends evaluation requests to a target.
@@ -37,10 +40,14 @@ API authentication is also current code, not a requirement for the personal CLI.
 
 ## Missing product capabilities
 
-There is no real daemon, built-in check registry, target adapter, evaluation pipeline,
-comparison engine, report/chart generator, or storage migration command. These commands fail
-explicitly. Normal submission remains unavailable until a real daemon starts. The next task
-adds manual process ownership, readiness, and outbound budgets, not model execution yet.
+There is no built-in check registry, target adapter, evaluation pipeline, comparison engine,
+or report/chart generator. Budget accounting is not yet connected to real evaluation traffic.
+Execution recovery remains a later task; the current control loop does not interrupt old
+owned runs or dispatch queued work. The next task adds the Groq transport/model boundaries.
+Submission's fresh-heartbeat gate permits up to ten seconds of queued acceptance after a
+hard crash; OS-liveness probes protect status/start, not the enqueue transaction.
+Physical terminal-close acceptance remains pending. One native creator-exit test failed
+during review, then passed reruns and ten extra probes; its cause remains unresolved.
 
 ## Reuse and migration considerations
 

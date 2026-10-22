@@ -1,6 +1,7 @@
 # Backend design
 
-Status: implementation design for the personal CLI. The runtime is not implemented.
+Status: implementation design for the personal CLI. Manual control and local management
+exist; evaluation runtime integration remains incomplete. See [current status](../status.md).
 Product choices come from [product scope](../product.md). Technical defaults below are
 proposed implementation choices, not claims about the current API.
 
@@ -39,9 +40,12 @@ Concrete package layout and libraries belong in the implementation plan.
 
 ## Submission and inspection
 
-A profile can be created without starting the daemon. A run submission requires a ready
-daemon for the selected data directory. If the daemon is unavailable, return an actionable
-error and create no run. Do not start the daemon automatically.
+A profile can be created without starting the daemon. Submission requires the selected
+data directory's persisted ready record with a heartbeat no more than ten seconds old.
+Stopped, draining, or stale readiness returns an actionable error and creates no run.
+After abrupt owner loss, a fresh record may still accept queued work within that window.
+This is durable acceptance, not synchronous OS liveness; that work waits for manual restart.
+Do not start the daemon automatically. Status and execution ownership use OS locks.
 
 The submission service validates the profile, selected checks, required capabilities,
 credentials references, and limits. It stores one queued run with immutable configuration

@@ -48,7 +48,7 @@ not identify a source folder or automatically start its target application.
 ## Intended workflow
 
 The following commands illustrate the agreed full interaction. Profile management and
-persisted inspection exist; daemon startup, built-in packs, evaluation execution, and
+persisted inspection and manual daemon control exist; built-in packs, evaluation execution, and
 reports do not. See [development](development.md) for implemented syntax and limitations.
 
 ```text

@@ -4,7 +4,6 @@ import sqlite3
 from collections.abc import Callable
 from contextlib import closing
 from datetime import UTC, datetime
-from importlib.resources import files
 from pathlib import Path
 from typing import TypeVar
 from uuid import UUID, uuid4
@@ -14,6 +13,8 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from asclepius.domain import (
     AppError,
+    BudgetReservation,
+    DaemonStatus,
     Finding,
     FindingOutput,
     GenerationOutput,
@@ -33,6 +34,8 @@ from asclepius.domain import (
     StageOutput,
     allowed_transition,
 )
+from asclepius.maintenance import SCHEMA_VERSION, initialize_storage, maintenance_lock
+from asclepius.paths import local_directory
 
 T = TypeVar("T")
 _STAGE = TypeAdapter(StageOutput)
@@ -50,18 +53,13 @@ class Repository:
     def __init__(self, data_dir: Path, *, busy_timeout: float = 5.0) -> None:
         if busy_timeout <= 0:
             raise ValueError("Storage timeout must be positive.")
-        self.data_dir = data_dir.resolve()
+        self.data_dir = local_directory(data_dir)
         self.database_path = self.data_dir / "asclepius.sqlite3"
         self.busy_timeout = busy_timeout
+        self._operations: set[asyncio.Task] = set()
 
     def _lock(self, exclusive: bool = False):
-        mode = portalocker.LOCK_EX if exclusive else portalocker.LOCK_SH
-        return portalocker.Lock(
-            self.data_dir / "maintenance.lock",
-            mode="a",
-            timeout=self.busy_timeout,
-            flags=mode | portalocker.LOCK_NB,
-        )
+        return maintenance_lock(self.data_dir, exclusive=exclusive, timeout=self.busy_timeout)
 
     def _connect(self, create: bool = False) -> sqlite3.Connection:
         uri = self.database_path.as_uri() + ("?mode=rwc" if create else "?mode=rw")
@@ -72,7 +70,7 @@ class Repository:
 
     @staticmethod
     def _schema(connection: sqlite3.Connection) -> None:
-        if connection.execute("PRAGMA user_version").fetchone()[0] != 1:
+        if connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
             raise AppError("schema_version", "Unsupported storage schema version.")
 
     def _transaction(self, action: Callable[[sqlite3.Connection], T], write: bool) -> T:
@@ -103,40 +101,44 @@ class Repository:
             raise AppError("storage_error", "Cannot access the data directory.") from None
 
     async def _run(self, action: Callable[[sqlite3.Connection], T], write: bool = False) -> T:
-        return await asyncio.to_thread(self._transaction, action, write)
+        task = asyncio.create_task(asyncio.to_thread(self._transaction, action, write))
+        self._operations.add(task)
+        task.add_done_callback(self._operations.discard)
+        return await self._finish_worker(task)
+
+    @staticmethod
+    async def _finish_worker(task: asyncio.Future[T]) -> T:
+        cancelled = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                cancelled = True
+            except Exception:
+                break
+        if cancelled:
+            if not task.cancelled():
+                task.exception()
+            raise asyncio.CancelledError
+        return task.result()
+
+    async def drain_operations(self) -> None:
+        cancelled = False
+        while self._operations:
+            try:
+                await self._finish_worker(
+                    asyncio.gather(*tuple(self._operations), return_exceptions=True)
+                )
+            except asyncio.CancelledError:
+                cancelled = True
+        if cancelled:
+            raise asyncio.CancelledError
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize)
 
     def _initialize(self) -> None:
-        try:
-            self.data_dir.mkdir(parents=True, exist_ok=True)
-            with self._lock(exclusive=True), closing(self._connect(create=True)) as connection:
-                version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version == 1:
-                    return
-                tables = connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                ).fetchall()
-                if version != 0 or tables:
-                    raise AppError("schema_version", "Unsupported storage schema version.")
-                connection.execute("PRAGMA journal_mode=WAL")
-                sql = (
-                    files("asclepius")
-                    .joinpath("migrations/001_initial.sql")
-                    .read_text(encoding="utf-8")
-                )
-                try:
-                    connection.executescript(
-                        "BEGIN IMMEDIATE;\n" + sql + "\nPRAGMA user_version=1;\nCOMMIT;"
-                    )
-                except BaseException:
-                    connection.rollback()
-                    raise
-        except portalocker.LockException:
-            raise AppError("storage_busy", "Storage maintenance is busy.") from None
-        except (OSError, sqlite3.DatabaseError):
-            raise AppError("storage_error", "Cannot initialize local storage.") from None
+        initialize_storage(self.data_dir, timeout=self.busy_timeout)
 
     @staticmethod
     def _run_row(connection: sqlite3.Connection, run_id: str) -> sqlite3.Row:
@@ -217,12 +219,149 @@ class Repository:
 
         return await self._run(action, write=True)
 
-    async def set_ready(self, instance_id: str) -> None:
+    async def set_ready(self, instance_id: str, *, pid: int | None = None) -> None:
         def action(connection):
             connection.execute(
-                "UPDATE daemon_control SET instance_id=?,state='ready',heartbeat_at=? "
+                "UPDATE daemon_control SET instance_id=?,state='ready',heartbeat_at=?,pid=? "
                 "WHERE singleton=1",
-                (instance_id, _now()),
+                (instance_id, _now(), pid),
+            )
+
+        await self._run(action, write=True)
+
+    async def control(self) -> DaemonStatus:
+        def action(connection):
+            row = connection.execute("SELECT * FROM daemon_control WHERE singleton=1").fetchone()
+            return DaemonStatus(
+                instance_id=row["instance_id"],
+                state=row["state"],
+                pid=row["pid"],
+                heartbeat_at=row["heartbeat_at"],
+            )
+
+        return await self._run(action)
+
+    async def heartbeat(self, instance_id: str) -> None:
+        def action(connection):
+            cursor = connection.execute(
+                "UPDATE daemon_control SET heartbeat_at=? WHERE instance_id=? "
+                "AND state IN ('ready','draining')",
+                (_now(), instance_id),
+            )
+            if cursor.rowcount != 1:
+                raise AppError("ownership", "Daemon ownership changed.")
+
+        await self._run(action, write=True)
+
+    async def request_stop(self, instance_id: str) -> None:
+        def action(connection):
+            cursor = connection.execute(
+                "UPDATE daemon_control SET state='draining' WHERE instance_id=? "
+                "AND state IN ('ready','draining')",
+                (instance_id,),
+            )
+            if cursor.rowcount != 1:
+                raise AppError("ownership", "Daemon ownership changed. Inspect status again.")
+
+        await self._run(action, write=True)
+
+    async def set_stopped(self, instance_id: str) -> None:
+        await self._run(
+            lambda connection: (
+                connection.execute(
+                    "UPDATE daemon_control SET state='stopped',pid=NULL,heartbeat_at=? "
+                    "WHERE instance_id=?",
+                    (_now(), instance_id),
+                ).rowcount
+            ),
+            write=True,
+        )
+
+    async def active_count(self, instance_id: str) -> int:
+        return await self._run(
+            lambda connection: connection.execute(
+                "SELECT count(*) FROM runs WHERE state='running' AND owner_id=?", (instance_id,)
+            ).fetchone()[0]
+        )
+
+    def _execution(self, connection, run_id: str, instance_id: str) -> sqlite3.Row:
+        row = self._owned(connection, run_id, instance_id)
+        if row["cancel_requested"]:
+            raise AppError("run_cancelled", "Run cancellation was requested.")
+        if row["reason"] == "budget_exhausted":
+            raise AppError("budget_exhausted", "Run execution budget is exhausted.")
+        snapshot = RunSnapshot.model_validate_json(row["snapshot_json"])
+        elapsed = (datetime.now(UTC) - datetime.fromisoformat(row["started_at"])).total_seconds()
+        if elapsed >= snapshot.profile.limits.run_timeout_seconds:
+            raise AppError("run_timeout", "Run execution deadline expired.")
+        return row
+
+    async def execution_checkpoint(self, run_id: str, instance_id: str) -> None:
+        await self._run(lambda connection: self._execution(connection, run_id, instance_id)["id"])
+
+    async def reserve_budget(self, reservation: BudgetReservation, instance_id: str) -> None:
+        def action(connection):
+            row = self._execution(connection, str(reservation.run_id), instance_id)
+            limits = RunSnapshot.model_validate_json(row["snapshot_json"]).profile.limits
+            if reservation.kind == "cleanup":
+                raise AppError(
+                    "unsupported_operation", "Cleanup requires a separate budget contract.", 2
+                )
+            counts = connection.execute(
+                "SELECT count(*),COALESCE(sum(max_output),0),COALESCE(sum(kind=?),0) "
+                "FROM budget_reservations WHERE run_id=? AND state<>'released'",
+                (reservation.kind, str(reservation.run_id)),
+            ).fetchone()
+            cap = limits.target_calls if reservation.kind == "target" else limits.evaluator_calls
+            if (
+                counts[0] >= limits.total_calls
+                or counts[2] >= cap
+                or counts[1] + reservation.max_output > limits.completion_tokens
+            ):
+                connection.execute(
+                    "UPDATE runs SET reason='budget_exhausted' WHERE id=?",
+                    (str(reservation.run_id),),
+                )
+                self._event(connection, str(reservation.run_id), "run.budget_exhausted")
+                return False
+            connection.execute(
+                "INSERT INTO budget_reservations VALUES(?,?,?,?,'reserved')",
+                (
+                    str(reservation.id),
+                    str(reservation.run_id),
+                    reservation.kind,
+                    reservation.max_output,
+                ),
+            )
+            return True
+
+        accepted = await self._run(action, write=True)
+        if not accepted:
+            raise AppError("budget_exhausted", "Run execution budget is exhausted.")
+
+    async def change_reservation(
+        self, reservation: BudgetReservation, state: str, instance_id: str
+    ) -> None:
+        def action(connection):
+            self._owned(connection, str(reservation.run_id), instance_id)
+            row = connection.execute(
+                "SELECT * FROM budget_reservations WHERE id=?", (str(reservation.id),)
+            ).fetchone()
+            if row is None or (row["run_id"], row["kind"], row["max_output"]) != (
+                str(reservation.run_id),
+                reservation.kind,
+                reservation.max_output,
+            ):
+                raise AppError("conflict", "Budget reservation identity conflicts.")
+            if row["state"] == state and state in {"settled", "released"}:
+                return
+            prior = {"dispatched": "reserved", "settled": "dispatched", "released": "reserved"}
+            if state not in prior or row["state"] != prior[state]:
+                raise AppError("conflict", "Budget reservation transition is not allowed.")
+            if state == "dispatched":
+                self._execution(connection, str(reservation.run_id), instance_id)
+            connection.execute(
+                "UPDATE budget_reservations SET state=? WHERE id=?", (state, str(reservation.id))
             )
 
         await self._run(action, write=True)
@@ -717,6 +856,8 @@ class Repository:
             ):
                 return
             row = self._owned(connection, run_id, instance_id)
+            if state == RunState.COMPLETED and row["reason"] == "budget_exhausted":
+                raise AppError("budget_exhausted", "An exhausted run cannot complete successfully.")
             if state in {RunState.QUEUED, RunState.RUNNING}:
                 raise AppError("invalid_transition", "Finalization requires a terminal state.", 2)
             allowed_transition(RunState(row["state"]), state)

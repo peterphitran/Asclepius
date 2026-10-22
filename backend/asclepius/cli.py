@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from asclepius import __version__
 from asclepius.config import data_directory, load_evaluator, load_plan, load_target
 from asclepius.domain import AppError, RunState
+from asclepius.maintenance import migrate_storage
+from asclepius.process import daemon_status, start_daemon, stop_daemon
 from asclepius.services import EvaluationService
 from asclepius.storage import Repository
 
@@ -62,9 +64,14 @@ def parser() -> argparse.ArgumentParser:
     finding_list.add_argument("--run", required=True, dest="run_id")
     pagination(finding_list)
     finding_actions.add_parser("show").add_argument("finding_id")
+    daemon = commands.add_parser("daemon", help="Manually control the detached queue daemon.")
+    daemon_actions = daemon.add_subparsers(dest="action", required=True)
+    for name in ("start", "stop"):
+        daemon_actions.add_parser(name).add_argument("--timeout", type=float, default=15)
+    daemon_actions.add_parser("status")
+    storage = commands.add_parser("storage", help="Explicit stopped-store maintenance.")
+    storage.add_subparsers(dest="action", required=True).add_parser("migrate")
     for name in (
-        "storage",
-        "daemon",
         "checks",
         "compare",
         "report",
@@ -95,6 +102,18 @@ async def dispatch(options, json_output: bool) -> None:
     if command == "init":
         await repo.initialize()
         data = {"initialized": True}
+    elif command == "storage":
+        data = {"schema_version": await asyncio.to_thread(migrate_storage, repo.data_dir)}
+    elif command == "daemon":
+        if options.action == "status":
+            data = await asyncio.to_thread(daemon_status, repo.data_dir)
+        else:
+            if not 0 < options.timeout <= 60:
+                raise AppError(
+                    "arguments", "Daemon wait timeout must be positive and at most 60 seconds.", 2
+                )
+            operation = start_daemon if options.action == "start" else stop_daemon
+            data = await asyncio.to_thread(operation, repo.data_dir, timeout=options.timeout)
     elif command == "targets":
         if options.action == "add":
             config = load_target(options.config)
