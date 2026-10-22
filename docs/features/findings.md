@@ -25,3 +25,9 @@ findings, missing IDs, partial failures, and multiple runs of the same target.
 - Execution errors must remain distinguishable from findings.
 - Evidence can contain target content and credentials.
 - Severity, confidence, and review semantics need a generic result schema.
+- Cite document/chunk identities, corpus version, query, retrieved ranks, and answer
+  evidence when applicable. A citation label alone does not establish grounding.
+- Redact configured secrets before persistence and display evidence as untrusted text.
+  Redaction cannot guarantee arbitrary target content is safe to share.
+- Preserve evidence limits/truncation metadata. Missing necessary evidence means
+  inconclusive, not an invented reproduction or confident finding.

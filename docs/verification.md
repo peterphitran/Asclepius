@@ -11,6 +11,10 @@ disposable database/data directory, and instances you create for the check. Foll
 
 The CLI has no entry point or verification driver yet. Its mapped journeys are future
 acceptance paths, not runnable instructions. Do not fabricate commands to mark them passed.
+The [backend design](specs/backend-design.md) defines runtime acceptance requirements;
+the [pipeline design](specs/evaluation-pipeline.md) defines the agent-specific checks.
+The [RAG design](specs/rag-testing.md) adds capability-specific fixture, indexing,
+retrieval, isolation, and cleanup cases. Chat-only proof cannot stand in for them.
 
 ## Proof requirements
 

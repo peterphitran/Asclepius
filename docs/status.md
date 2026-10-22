@@ -22,7 +22,8 @@ Campaign creation stores queued records and returns an identifier. Nothing dispa
 them to a worker or sends evaluation requests to a target.
 
 The existing API calls runs `sweeps` and stores `campaigns`; those identifiers describe
-current code. Their mapping to the new product vocabulary is still a design task.
+current code. The [backend design](specs/backend-design.md) defines their replacement
+with profile/run domain records and a separate execution coordinator.
 API authentication is also current code, not a requirement for the personal CLI.
 
 ## Missing product capabilities
@@ -31,6 +32,9 @@ There is no CLI entry point, local daemon, SQLite store, executable check regist
 target adapter, evaluation pipeline, comparison engine, or report/chart generator.
 
 ## Reuse and migration considerations
+
+The backend design contains the runtime transition decisions. The following constraints
+describe source behavior that implementation must account for.
 
 - Guarded lifecycle operations are a possible starting point, but their Postgres row
   locks do not provide a SQLite scheduler automatically.

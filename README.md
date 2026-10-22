@@ -8,3 +8,5 @@ and generate local reports and charts. This workflow is planned; the current cod
 an API prototype.
 
 Start with the [documentation index](docs/README.md).
+The [backend design](docs/specs/backend-design.md) describes the planned CLI runtime
+and four-agent execution architecture.

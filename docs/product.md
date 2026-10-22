@@ -1,6 +1,6 @@
 # Product
 
-Status: agreed scope; technical design pending.
+Status: agreed scope. The backend design records proposed implementation defaults.
 
 ## Purpose
 
@@ -15,7 +15,11 @@ easy to inspect and compare.
 | --- | --- |
 | Interface | Local CLI. |
 | Applications | Save multiple named profiles with connection details and execution limits. |
+| Integration order | Hosted model API first, Ollama second, then RAGbot for ingestion/retrieval coverage. Keep the core schema application-neutral. |
+| Initial provider | Groq for the target and evaluator roles, configured independently. Exact models remain to be selected. |
 | Execution | Manually start a detached background daemon; submit runs with bounded concurrency. |
+| Evaluation | Retain Selector, Generator, Judge, and Reporter as four separate agent roles. |
+| Initial coverage | Broad attack pack for the target's supported capabilities, not a minimal smoke-only pack. Execution remains bounded. |
 | Storage | Local SQLite history and local report files. |
 | Inspection | Run details, logs, findings, repeated-run comparisons, and charts. |
 | Output | Generated local reports; JSON, Markdown, and HTML are candidate formats. |
@@ -33,6 +37,8 @@ target applications and model providers may still be needed.
 - **Check:** a security test with an objective, input strategy, and evaluation criteria.
 - **Run:** one execution of selected checks against a profile, with its own ID and results.
 - **Daemon:** the local background process that accepts and executes queued runs.
+- **Agent:** one evaluation role in the four-agent pipeline.
+- **Worker:** execution capacity within the daemon, distinct from an agent's responsibility.
 - **Finding:** evidence of a potential weakness, linked to its run and check.
 - **Report:** an exported view of run results or comparisons.
 
@@ -58,17 +64,22 @@ A target must be reachable before a run can use it. Closing the submitting termi
 should leave the daemon working. Computer sleep, shutdown, process crashes, and
 restart recovery require explicit handling; detachment alone does not solve them.
 
+## Backend design
+
+The [backend design](specs/backend-design.md) owns component boundaries, local queue and
+storage, lifecycle states, control policy, and the transition from the existing API.
+The [evaluation pipeline](specs/evaluation-pipeline.md) owns agent contracts and evidence
+handoffs. These designs do not describe implemented capabilities.
+The [RAG testing design](specs/rag-testing.md) extends checks to ingestion, direct retrieval,
+and grounding where the target exposes those capabilities, without adding a frontend.
+
 ## Design decisions still open
 
-- Initial connection protocol, request mapping, response extraction, and credential storage.
-- First checks, versioned case format, judging criteria, and evidence schema.
-- Whether separate selector/generator/judge/reporter stages are useful; no provider
-  or orchestration library has been selected.
-- SQLite schema, configuration snapshots, data paths, and data migration policy.
-- Daemon readiness, single-instance behavior, submission while stopped, stop/drain
-  semantics, cancellation, retries, and interrupted-run recovery.
-- Concurrency, timeout, request, and cost limits.
-- Comparison metrics, compatibility rules, report formats, and chart types.
-- Which existing implementation to adapt or retire.
+- Exact check/rubric definitions, stage schemas, prompts, and initial Groq model selections.
+- Target request-template and response-selector syntax, and credential-reference implementation.
+- SQLite DDL and migrations, operating-system paths and locks, and numeric execution limits.
+- Comparison metrics, report formats, chart types, and optional data import.
 
 Detailed user behaviors belong in the [feature map](features/README.md).
+The [design review](specs/design-review.md) prioritizes the remaining product choices
+and distinguishes proposed implementation defaults from agreed scope.

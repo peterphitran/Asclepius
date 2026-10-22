@@ -20,7 +20,10 @@ For a focused change, open the affected feature and relevant journey. For a broa
 follow this order and finish with journeys. Shared preconditions, proof conventions,
 and existing smoke evidence live in [verification](../verification.md).
 
-Exact CLI syntax is undecided; the only command sketch is in [product workflow](../product.md).
+Exact CLI syntax is undecided; the command sketch is in [product workflow](../product.md).
+The [backend design](../specs/backend-design.md) defines proposed lifecycle and control defaults.
+The [RAG design](../specs/rag-testing.md) separates chat, retrieval, and ingestion coverage.
+The [design review](../specs/design-review.md) tracks proposed defaults and open decisions.
 Status labels used in feature pages are **planned** and **design pending**. Neither means
 implemented or verified. Update a page's entry points and proof when its code becomes usable.
 
