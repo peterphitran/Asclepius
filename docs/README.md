@@ -7,7 +7,7 @@
 | [Evaluation pipeline](specs/evaluation-pipeline.md) | Four agent contracts, their handoffs, and evidence provenance. |
 | [RAG testing](specs/rag-testing.md) | Document fixtures, ingestion/readiness, retrieval evidence, mutation isolation, and cleanup. |
 | [Design review](specs/design-review.md) | Cross-feature concerns, proposed defaults, and decisions needing discussion. |
-| [Implementation plan](plans/2026-10-21-cli-evaluator.md) | Reviewable defaults, file ownership, task order, and hosted/Ollama acceptance gates. Draft; execution not started. |
+| [Implementation plan](plans/2026-10-21-cli-evaluator.md) | Reviewable defaults, file ownership, task order, and hosted/Ollama acceptance gates. Task 1 verified; runtime execution still pending. |
 | [Status](status.md) | Current implementation, reusable pieces, and transition gaps. |
 | [Feature map](features/README.md) | User actions and their feature-specific verification paths. |
 | [Development](development.md) | Environment setup, API startup, migrations, and test commands. |

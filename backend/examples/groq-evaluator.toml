@@ -1,0 +1,21 @@
+schema_version = 1
+
+[roles.selector]
+provider = "groq"
+model = "openai/gpt-oss-120b"
+secret_ref = "env:GROQ_API_KEY"
+
+[roles.generator]
+provider = "groq"
+model = "openai/gpt-oss-120b"
+secret_ref = "env:GROQ_API_KEY"
+
+[roles.judge]
+provider = "groq"
+model = "openai/gpt-oss-120b"
+secret_ref = "env:GROQ_API_KEY"
+
+[roles.reporter]
+provider = "groq"
+model = "openai/gpt-oss-120b"
+secret_ref = "env:GROQ_API_KEY"

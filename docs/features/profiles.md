@@ -1,6 +1,9 @@
 # Application Profiles
 
 Status: planned. Save named connection settings for applications you want to evaluate.
+The CLI foundation can validate target/evaluator TOML files as described in
+[development](../development.md#cli-foundation). Saving profiles and submitting runs
+are not implemented yet.
 
 ## Sub-features
 

@@ -1,7 +1,38 @@
 # Development
 
-These instructions operate the current API prototype. See [status](status.md) for its
-implementation boundaries and [product](product.md) for the planned CLI.
+See [status](status.md) for current implementation boundaries. CLI execution is not available
+yet. Configuration validation works without a daemon, API server, or database service.
+
+## CLI foundation
+
+From `backend/` in a separate active Python environment, choose the matching hashed lock:
+
+```text
+python -m pip install --require-hashes -r requirements-cli-wsl.lock
+python -m pip install --no-deps -e .
+asclepius --help
+asclepius config validate examples/groq-target.toml --json
+asclepius config validate examples/groq-evaluator.toml --kind evaluator --json
+python -m pytest
+python -m ruff check asclepius tests/cli
+```
+
+Use `requirements-cli-windows.lock` on native Windows. Locks were resolved with Python
+3.12 on WSL and Python 3.13 on Windows. They currently include legacy dependencies too.
+Do not apply them to an unrelated environment or replace the original checkout's `.venv`.
+Validation checks secret references, not secret values or provider availability. No key
+is needed to validate the examples. Operational commands currently exit 5 with
+`not_implemented`; accepting a command name is not proof that its feature works.
+
+To regenerate a lock in its matching platform environment:
+
+```text
+python -m piptools compile --extra dev --generate-hashes --allow-unsafe --strip-extras --no-emit-index-url --output-file requirements-cli-wsl.lock pyproject.toml
+```
+
+Change the output filename for Windows. A built wheel was also installed and exercised
+outside the source directory on each platform. Recorded proof is in
+[the Task 1 evidence](verification/evidence/cli-foundation.json).
 
 ## Python environment
 

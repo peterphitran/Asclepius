@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-22T02:42:13Z",
+  "branch": "codex/cli-evaluator",
+  "base_commit": "d13e794",
+  "source_state": "Task 1 working tree before its implementation commit",
+  "scope": "CLI help/configuration/domain and install packaging only",
+  "baseline": {
+    "legacy_tests": 3,
+    "result": "passed",
+    "new_tests_before_implementation": "ModuleNotFoundError: No module named 'asclepius'"
+  },
+  "tests": {
+    "command": "python -m pytest -q",
+    "wsl_python": "3.12.3",
+    "windows_python": "3.13",
+    "wsl_result": "45 passed",
+    "windows_result": "45 passed",
+    "cli_tests": 42,
+    "legacy_tests": 3,
+    "warning": "Existing StarletteDeprecationWarning about httpx with starlette.testclient"
+  },
+  "static_checks": {
+    "command": "python -m ruff check asclepius tests/cli",
+    "result": "All checks passed"
+  },
+  "packaging": {
+    "hashed_locks": ["requirements-cli-wsl.lock", "requirements-cli-windows.lock"],
+    "lock_install_command": "python -m pip install --require-hashes -r <platform lock>",
+    "editable_install": "Succeeded on WSL and Windows",
+    "built_wheel": "asclepius_backend-0.1.0-py3-none-any.whl",
+    "wheel_install": "Succeeded on WSL and Windows",
+    "wheel_import_check": "Imported from site-packages outside source tree on both platforms",
+    "wheel_contents": "Contains app/main.py and asclepius/cli.py without __pycache__",
+    "initial_build_failure": "Redundant Hatch force-include duplicated asclepius/__init__.py",
+    "build_fix": "Removed force-include and reran the same build successfully"
+  },
+  "review": {
+    "independent_code_reviewer": "gpt-6-astra",
+    "comment_reviewer": "gpt-6-luna",
+    "comment_findings": 0,
+    "code_findings": [
+      "JSON argument errors lacked an envelope",
+      "Some persisted timestamps accepted naive or non-UTC values",
+      "URL safety checks did not survive typed model restoration",
+      "Configuration size limit did not bound the initial read"
+    ],
+    "fix_verification": "11 new regression cases failed before fixes; all 42 CLI tests passed afterward",
+    "review_limit": "Single independent code review, not a diverse-model adversarial panel"
+  },
+  "observed_cli": [
+    "asclepius --help exits 0",
+    "asclepius --version prints 0.1.0",
+    "Target config validation emits schema_version 1 and ok true",
+    "Evaluator config validation emits schema_version 1 and ok true",
+    "Unimplemented daemon command exits 5 with not_implemented",
+    "Invalid JSON-mode arguments exit 2 with a structured error"
+  ],
+  "not_verified": [
+    "daemon", "SQLite storage", "target requests", "Groq access", "agent execution",
+    "attack coverage", "cancellation/recovery", "reports/charts", "Ollama", "RAGbot"
+  ],
+  "preservation": "Original checkout, backend edits, frontend removal, existing databases and original virtualenv were not modified",
+  "temporary_environments": "Dedicated verification environments remain under system temp directories; no evaluation process was started"
+}

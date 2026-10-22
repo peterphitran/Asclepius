@@ -1,6 +1,6 @@
 # CLI Evaluator Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Execution method requires user selection; this document does not authorize starting implementation.
+> **For agentic workers:** The user selected installed pstack skills for implementation. Follow poteto-mode and its Codex mapping, keep a decision trail, and verify each task before starting the next. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver a general-purpose CLI LLM evaluator with a real Groq-backed broad attack pack, durable background execution, comparisons, and local reports; then validate Ollama through the same core.
 
@@ -10,7 +10,7 @@
 
 **Spec:** [Backend design](../specs/backend-design.md), [pipeline](../specs/evaluation-pipeline.md), [product](../product.md), [feature map](../features/README.md). [RAG design](../specs/rag-testing.md) is a later capability milestone, not implemented by this plan.
 
-Status: draft for user review. No task is implemented or verified by this document.
+Status: implementation started on `codex/cli-evaluator`. Task 1 is verified in [the foundation evidence](../verification/evidence/cli-foundation.json). Tasks 2 through 12 remain pending.
 
 ## Global Constraints
 
@@ -161,6 +161,8 @@ are synchronous. Do not introduce a DB thread that blocks the daemon's event loo
 
 ### Task 1: Installable CLI, configuration, and domain boundary
 
+Verified on WSL and Windows. See [Task 1 evidence](../verification/evidence/cli-foundation.json).
+
 **Files:** Create `backend/asclepius/{__init__,__main__,cli,config,domain}.py`,
 `backend/tests/cli/{__init__,test_config,test_domain,test_cli_help}.py`,
 `backend/examples/{groq-target,groq-evaluator}.toml`,
@@ -176,12 +178,12 @@ Envelope requires schema version, operation kind, IDs, timing, status, uncertain
 typed payload. Initially register `chat.v1`; unsupported operation kinds fail explicitly.
 Judgment contains diagnostic assertions, optional security verdict, and evidence references.
 
-- [ ] Write tests `test_target_and_evaluator_are_independent`, `test_reject_secret_literal`,
+- [x] Write tests `test_target_and_evaluator_are_independent`, `test_reject_secret_literal`,
   `test_reject_unknown_fields`, `test_non_rag_observation_needs_no_corpus`, and
   `test_terminal_states_cannot_transition_to_queued`; assert sample TOML resolves defaults,
   `secret_ref == "env:GROQ_API_KEY"`, and no secret value is serialized.
-- [ ] Run `python -m pytest tests/cli/test_config.py tests/cli/test_domain.py tests/cli/test_cli_help.py -q` from `backend/`; expect missing-package/function failures before implementation.
-- [ ] Implement the contracts/parser/help. Add console script `asclepius = "asclepius.cli:main"`,
+- [x] Run `python -m pytest tests/cli/test_config.py tests/cli/test_domain.py tests/cli/test_cli_help.py -q` from `backend/`; expect missing-package/function failures before implementation.
+- [x] Implement the contracts/parser/help. Add console script `asclepius = "asclepius.cli:main"`,
   package both `app` and `asclepius`, include pack/prompt/SQL resources in built wheels,
   update clinical-only package description, and declare direct CLI dependencies. Keep old
   dependencies for now. Add pip-tools to dev tooling; from `backend/` use
@@ -189,9 +191,9 @@ Judgment contains diagnostic assertions, optional security verdict, and evidence
   on WSL and the corresponding `requirements-cli-windows.lock` output on Windows.
   Record Python/resolver versions and install each platform's hashed lock into disposable
   verification environments before the editable project. Never capture private index credentials.
-- [ ] Run focused tests, install editable into an isolated disposable environment, then
+- [x] Run focused tests, install editable into an isolated disposable environment, then
   `asclepius --help` and `python -m asclepius --help`; expect exit 0 and matching command groups.
-- [ ] Commit only Task 1 paths: `feat: define CLI contracts and configuration`.
+- [x] Commit only Task 1 paths: `feat: define CLI contracts and configuration`.
 
 ### Task 2: SQLite history, claims, and durable identities
 

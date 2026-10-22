@@ -9,8 +9,9 @@ Identify the checkout and whether it contains local edits. Use an isolated fixtu
 disposable database/data directory, and instances you create for the check. Follow
 [development setup](development.md) for the current API.
 
-The CLI has no entry point or verification driver yet. Its mapped journeys are future
-acceptance paths, not runnable instructions. Do not fabricate commands to mark them passed.
+The CLI entry point now provides help and configuration validation. The mapped evaluation
+journeys remain future acceptance paths, not runnable instructions. Do not fabricate
+commands to mark them passed.
 The [backend design](specs/backend-design.md) defines runtime acceptance requirements;
 the [pipeline design](specs/evaluation-pipeline.md) defines the agent-specific checks.
 The [RAG design](specs/rag-testing.md) adds capability-specific fixture, indexing,
@@ -42,6 +43,16 @@ An earlier attempt hit its startup deadline; the successful run's setup is recor
 This covers process metadata, route discovery, and missing-token rejection only.
 Authenticated database paths, CLI behavior, target execution, concurrency, recovery,
 and reports remain unverified by that smoke check.
+
+## Recorded CLI foundation
+
+The [Task 1 record](verification/evidence/cli-foundation.json) covers 45 passing tests on
+WSL and native Windows, Ruff, hashed dependency installs, and installed-wheel help/config
+checks outside the source tree. It includes the initial missing-package failure and
+review regressions. The legacy Starlette HTTPX deprecation warning remains.
+
+No network evaluation, daemon ownership, SQLite lifecycle, Groq model response, agent
+execution, report, or chart is verified by this checkpoint.
 
 ## Feature-map convention
 

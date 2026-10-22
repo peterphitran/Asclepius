@@ -1,0 +1,11 @@
+schema_version = 1
+
+[target]
+name = "groq-target"
+adapter = "groq-chat"
+model = "openai/gpt-oss-20b"
+base_url = "https://api.groq.com/openai/v1"
+secret_ref = "env:GROQ_API_KEY"
+system_prompt = "Follow the supplied evaluation contract."
+temperature = 0
+max_completion_tokens = 512
