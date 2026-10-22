@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-22T03:12:47Z",
+  "branch": "codex/cli-evaluator",
+  "parent_commit": "147322f",
+  "source_state": "Task 2 working tree before its implementation commit",
+  "scope": "SQLite repository and installed migration resource, not CLI execution or daemon ownership",
+  "tests": {
+    "command": "python -m pytest -q",
+    "wsl_python": "3.12.3",
+    "windows_python": "3.13",
+    "wsl_result": "67 passed",
+    "windows_result": "67 passed",
+    "storage_tests": 22,
+    "prior_tests": 45,
+    "warning": "Existing StarletteDeprecationWarning about httpx with starlette.testclient"
+  },
+  "observed_failures_before_fixes": [
+    "Initial new tests could not import the missing storage module",
+    "Native shared locks failed without portalocker's win32 extra; direct probe identified missing pywin32",
+    "Commit-only stage attempts fabricated a start timestamp instead of preserving unknown start time",
+    "Independent judgment foreign keys accepted a mismatched work-item/variant pair",
+    "Creating a duplicate profile silently edited existing configuration instead of raising AppError"
+  ],
+  "verified_behaviors": [
+    "Repeat initialization preserves history and rejects unknown database/schema versions without resetting them",
+    "Referenced profiles cannot be deleted; submitted snapshots survive profile edits",
+    "Duplicate profile creation conflicts and preserves existing configuration",
+    "Two real spawned processes claim one queued run exactly once",
+    "Write contention is bounded; WAL reads succeed during a held writer",
+    "Shared maintenance access excludes exclusive migration access",
+    "Fresh readiness is required for new submissions and claims",
+    "New operation, observation, stage, and terminal mutations reject obsolete owners",
+    "Exact committed repeats return saved content without duplicate events; conflicting repeats fail",
+    "Stage output, generated work items, judgments, findings, and events commit or roll back together",
+    "Judgments bind run/work-item/variant identities; findings require matching weakness judgments and observed evidence",
+    "Cross-variant, cross-run, and fabricated evidence is rejected",
+    "Recovery retains known observations, converts pending intents to unknown, interrupts old ownership, and is repeatable",
+    "Repeated operation intents return created=false and never grant request replay permission"
+  ],
+  "packaging": {
+    "static_check": "python -m ruff check asclepius tests/cli: passed",
+    "windows_dependency_fix": "portalocker[win32]>=4,<5; regenerated Windows hash lock includes pywin32",
+    "locks": "Platform locks resolved successfully; Windows hash-checked install passed; WSL lock unchanged",
+    "wheel_build_install": "Succeeded on WSL and native Windows after final source changes",
+    "outside_source_probe": "Both imported storage from site-packages and initialized bundled schema v1 with WAL and composite judgment foreign key",
+    "probe_correction": "The first Windows probe retained its own sqlite connection through temporary-directory cleanup; explicitly closing the probe connection fixed cleanup without product code changes"
+  },
+  "review": {
+    "contract_reviewer": "gpt-6.1-sol",
+    "independent_code_reviewer": "gpt-6-astra",
+    "comment_reviewer": "gpt-6-luna",
+    "comment_findings": 0,
+    "disposition": "No blocking scoped defect reported. Added retained rollback/generator/evidence tests, preserved unknown invocation start times, and updated the plan's ownership and operation-intent interfaces.",
+    "final_trail_review": "gpt-6-astra confirmed 22 storage cases and Ruff, identified two stale documentation status statements, and found no remaining Task 2 blocker. Both statements were corrected. The reviewer did not repeat the full platform suites or installed-wheel probes."
+  },
+  "not_verified": [
+    "Public profile/run CLI commands or storage migration command",
+    "Actual daemon process ownership, startup, heartbeat, drain, or restart",
+    "Pending/failed stage invocation recording before model calls",
+    "Network crash timing, external provider execution, cancellation, budgets, or end-to-end recovery",
+    "Live Groq, Ollama, RAG ingestion/retrieval, reports, charts, or comparisons"
+  ]
+}

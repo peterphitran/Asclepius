@@ -10,7 +10,9 @@
 
 **Spec:** [Backend design](../specs/backend-design.md), [pipeline](../specs/evaluation-pipeline.md), [product](../product.md), [feature map](../features/README.md). [RAG design](../specs/rag-testing.md) is a later capability milestone, not implemented by this plan.
 
-Status: implementation started on `codex/cli-evaluator`. Task 1 is verified in [the foundation evidence](../verification/evidence/cli-foundation.json). Tasks 2 through 12 remain pending.
+Status: implementation started on `codex/cli-evaluator`. Tasks 1 and 2 are verified in
+[the foundation evidence](../verification/evidence/cli-foundation.json) and
+[the storage evidence](../verification/evidence/cli-storage.json). Tasks 3 through 12 remain pending.
 
 ## Global Constraints
 
@@ -202,26 +204,40 @@ Judgment contains diagnostic assertions, optional security verdict, and evidence
 
 **Interfaces:** `Repository(data_dir: Path)` exposes async `initialize() -> None`,
 `claim_next(instance_id: str) -> RunSnapshot | None`,
-`commit_stage(run_id: str, work_item_id: str, stage: str, output: StageOutput) -> StageOutput`,
-`begin_operation(request: OperationRequest) -> str`, `save_observation(observation: Observation) -> None`,
+`commit_stage(run_id: str, work_item_id: str, stage: str, output: StageOutput, *, instance_id: str) -> StageOutput`,
+`begin_operation(request: OperationRequest, *, instance_id: str) -> OperationIntent`,
+`save_observation(observation: Observation, *, instance_id: str) -> None`,
 `events(run_id: str, after: int = 0) -> list[dict]`, `read_run(run_id: str) -> RunView`,
-`interrupt_orphans(instance_id: str) -> list[str]`, and `finalize(run_id: str, state: RunState, reason: str | None) -> None`.
+`interrupt_orphans(instance_id: str) -> list[str]`, and
+`finalize(run_id: str, state: RunState, reason: str | None, *, instance_id: str) -> None`.
 
-- [ ] Write real temporary SQLite tests asserting foreign keys, schema rejection, rollback,
+Storage also supplies `save_profile(config: ProfileConfig, *, profile_id: str | None = None) -> str`,
+`enqueue(snapshot: RunSnapshot) -> str`, `set_ready(instance_id: str) -> None`, and
+`register_work_item(run_id: str, work_item_id: str, check_id: str, variant_id: str | None = None, *, instance_id: str) -> None`.
+Omitting `profile_id` creates a profile and rejects duplicate names; supplying it explicitly
+edits the existing active identity, including a unique rename. Identical edits do not bump revision.
+These are persistence primitives, not public CLI services or proof of OS daemon ownership.
+New mutations fence against the current daemon and run owner inside their write transaction.
+Exact committed repeats may return saved content without mutation after terminalization.
+`OperationIntent.created` grants dispatch eligibility only when true; repeated pending,
+observed, or unknown intents never authorize another request. The coordinator must still
+check cancellation, ownership, and budgets before dispatch.
+
+- [x] Write real temporary SQLite tests asserting foreign keys, schema rejection, rollback,
   immutable snapshots, monotonic per-run event ordering, and identical stage re-commit returns
   the saved value while conflicting content raises `AppError`. Unique stage identity:
   `(run_id, work_item_id, stage)` for committed output; attempts remain separate audit records.
-- [ ] Add two-process tests: two claimants cannot claim the same queued run; held write
+- [x] Add two-process tests: two claimants cannot claim the same queued run; held write
   contention returns a bounded busy error. Test an operation intent without a saved reply
   becomes unknown on orphan recovery, without deleting prior evidence or replaying a request.
-- [ ] Run `python -m pytest tests/cli/test_storage.py tests/cli/test_storage_processes.py -q`; expect failure before implementation.
-- [ ] Implement version table, profiles, runs, work_items, stages, operations, observations,
+- [x] Run `python -m pytest tests/cli/test_storage.py tests/cli/test_storage_processes.py -q`; expect failure before implementation.
+- [x] Implement version table, profiles, runs, work_items, stages, operations, observations,
   judgments, findings, events, daemon_control, and budget reservations. Use FKs/unique
   constraints (including finding run/variant), parameterized SQL, WAL, busy timeout, and
   `BEGIN IMMEDIATE` for conditional claims/state changes. Persist output+event atomically.
   Profile removal is a tombstone; referenced history is not cascade-deleted.
-- [ ] Run focused tests again; expect pass using real SQLite, not fake sessions.
-- [ ] Commit Task 2 paths: `feat: persist local runs and atomic claims`.
+- [x] Run focused tests again; expect pass using real SQLite, not fake sessions.
+- [x] Commit Task 2 paths: `feat: persist local runs and atomic claims`.
 
 ### Task 3: Profiles, submission, inspection, and linked retries
 
@@ -229,11 +245,11 @@ Judgment contains diagnostic assertions, optional security verdict, and evidence
 `backend/tests/cli/test_cli_profiles.py`. Extend `storage.py`, `cli.py`, `config.py`.
 
 **Interfaces:** `EvaluationService(repo: Repository)` exposes async
-`save_profile(config: ProfileConfig) -> str`, `submit(profile: str, evaluator: EvaluatorConfig, checks: list[CheckDefinition]) -> str`,
+`save_profile(config: ProfileConfig, *, profile_id: str | None = None) -> str`, `submit(profile: str, evaluator: EvaluatorConfig, checks: list[CheckDefinition]) -> str`,
 `cancel(run_id: str) -> RunView`, `retry(run_id: str) -> str`.
-Repository adds async `save_profile(config: ProfileConfig) -> str`, `list_profiles() -> list[ProfileConfig]`,
+Repository extends the Task 2 profile/enqueue primitives and adds async `list_profiles() -> list[ProfileConfig]`,
 `get_profile(identity: str) -> ProfileConfig`, `remove_profile(identity: str) -> None`,
-`enqueue(snapshot: RunSnapshot) -> str`, `request_cancel(run_id: str) -> RunView`,
+`request_cancel(run_id: str) -> RunView`,
 `list_runs(profile_id: str | None = None) -> list[RunView]`,
 `list_findings(run_id: str) -> list[Finding]`, `read_finding(finding_id: str) -> Finding`.
 `enqueue` checks daemon acceptance and inserts the snapshot/event in the same transaction.
@@ -262,7 +278,7 @@ Repository adds async `save_profile(config: ProfileConfig) -> str`, `list_profil
 **Interfaces:** `start_daemon(data_dir: Path) -> DaemonStatus`, async
 `serve(data_dir: Path) -> None`, async `BudgetManager.reserve(run_id: str, kind: str, max_output: int) -> BudgetReservation`,
 async `BudgetManager.slot(resource_key: str, kind: str)` context manager.
-Repository adds async `control() -> DaemonStatus`, `set_ready(instance_id: str) -> None`,
+Repository extends Task 2 readiness persistence and adds async `control() -> DaemonStatus`,
 `heartbeat(instance_id: str) -> None`, `request_stop() -> None` and persisted reservation operations.
 
 - [ ] Write process tests for duplicate start, stale PID/heartbeat, readiness only after lock/schema,
@@ -273,6 +289,8 @@ Repository adds async `control() -> DaemonStatus`, `set_ready(instance_id: str) 
   operation acquires shared access, migrations require exclusive access with daemon stopped.
   Lock order for startup/migration: instance lock, then maintenance lock; ordinary CLI DB
   operations never acquire the instance lock while holding maintenance access.
+  Await outstanding repository thread operations before releasing lifetime locks: cancelling
+  an awaiting coroutine does not stop its underlying `asyncio.to_thread` database operation.
 - [ ] Run `python -m pytest tests/cli/test_daemon_process.py tests/cli/test_limits.py tests/cli/test_maintenance.py -q`; expect failures.
 - [ ] Implement portalocker lifetime instance lock and maintenance locks. Canonicalize paths;
   default Windows `%LOCALAPPDATA%/Asclepius`, WSL/Linux `$XDG_DATA_HOME/asclepius` or
@@ -379,6 +397,8 @@ Daemon schedules claimed snapshots through this interface, never directly invoke
   not a misleading fixed total percentage. Commit exact inputs before sending.
   Bound evidence; necessary evidence missing due truncation yields inconclusive.
   Finalize only after in-flight work settles; partial findings survive failure.
+  Add pending/failed stage invocation records before model calls. Task 2 commit-only attempts
+  record unknown start time as NULL, not a fabricated duration, and do not prove invocation recovery.
 - [ ] Repeat integration tests, inspecting saved SQLite output and fixture request logs;
   expect matching identities, no duplicated committed stages/findings.
 - [ ] Commit owned changes: `feat: execute queued evaluations end to end`.

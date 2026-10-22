@@ -215,6 +215,12 @@ class OperationRequest(Contract):
     payload: ChatInput
 
 
+class OperationIntent(Contract):
+    operation_id: UUID
+    created: bool
+    status: Literal["pending", "observed", "unknown"]
+
+
 class Observation(Contract):
     schema_version: Literal[1] = 1
     id: UUID = Field(default_factory=uuid4)

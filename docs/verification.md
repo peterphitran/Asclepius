@@ -54,6 +54,18 @@ review regressions. The legacy Starlette HTTPX deprecation warning remains.
 No network evaluation, daemon ownership, SQLite lifecycle, Groq model response, agent
 execution, report, or chart is verified by this checkpoint.
 
+## Recorded SQLite repository
+
+The [Task 2 record](verification/evidence/cli-storage.json) covers 67 passing tests on WSL
+and native Windows, including 22 storage tests using real temporary SQLite files and
+spawned claimant processes. It records transaction rollback, owner fences, exact repeats,
+immutable snapshots, evidence relationships, unknown intent recovery, WAL reads, and locks.
+Installed wheels initialize their bundled schema outside the source tree on both platforms.
+
+The control identity used by repository tests is a fixture, not proof of a real daemon.
+CLI profile/submission commands, actual network execution, crash timing at the network
+boundary, pending/failed stage invocation records, and end-to-end recovery remain unverified.
+
 ## Feature-map convention
 
 Each feature file has four sections: sub-features, user entry point, terminal driving,
