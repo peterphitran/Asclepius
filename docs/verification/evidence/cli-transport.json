@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-22T17:55:04Z",
+  "branch": "codex/cli-evaluator",
+  "parent_commit": "fcd10aa",
+  "source_state": "Uncommitted Task 5 transport slice; Task 5 remains incomplete",
+  "scope": "Low-level single HTTP POST tested against real loopback HTTP and HTTPS servers. No hosted model or evaluation execution.",
+  "tests": {
+    "command": "python -m pytest -o addopts= -q",
+    "wsl_result": "154 passed, 1 inherited warning",
+    "windows_result": "153 passed, 1 skipped, 1 inherited warning",
+    "transport_cases": 32,
+    "prior_cases": 122,
+    "windows_skip": "Existing WSL-only mount test",
+    "warning": "Existing StarletteDeprecationWarning about httpx with starlette.testclient",
+    "ruff": "Final format check reported 29 files already formatted; scoped Ruff check passed",
+    "final_native_focused_result": "32 transport tests passed after final test-fixture synchronization edit"
+  },
+  "verified_behavior": [
+    "Real POST preserves JSON payload and bearer authorization",
+    "No environment proxy or environment certificate trust",
+    "Verified TLS with explicit trust root; insecure TLS contexts rejected",
+    "Redirects and HTTP error statuses fail after one request without retries",
+    "Missing or invalid secrets fail before any request",
+    "Non-object and malformed JSON fail with sanitized errors",
+    "Bounded identity body rejects oversized and compressed replies",
+    "Total deadline stops a body arriving faster than the inactivity timeout",
+    "Reflected secrets in response headers and reason phrases are absent from dependency logs",
+    "Task-local log suppression preserves concurrent and subsequent unrelated diagnostics",
+    "Wire-URL incompatibility is converted to sanitized transport_config"
+  ],
+  "red_and_mutation_evidence": [
+    "Initial collection failed because the transport module did not exist",
+    "Environment TLS trust, compression rejection, and insecure contexts had observed failing regressions before fixes",
+    "Reflected response headers and reason phrases exposed the synthetic key before task-local dependency-log suppression",
+    "HTTPX InvalidURL escaped before wire-URL validation",
+    "Disabling the total asyncio deadline made the drip-body regression fail with DID NOT RAISE; the deadline was immediately restored"
+  ],
+  "review": {
+    "grounding": "gpt-6.1-sol read-only architecture check",
+    "comment_gate": "gpt-6-luna passed the initial transport and test files with no comment flags",
+    "independent_code_review": "gpt-6-astra found logging leakage, unsanitized InvalidURL, and insufficient total-deadline proof",
+    "re_review": "gpt-6-astra reported no unresolved transport findings and independently reran four new regressions on WSL",
+    "scope": "Transport only, not a completed Task 5 review",
+    "audit_trail": "gpt-6.1-sol checked supplied digest, source and artifacts, not a full transcript. Scope/counts consistent; append-only evidence-pointer correction requested and recorded."
+  },
+  "failed_attempts_and_cleanup": [
+    "Initial native focused suite had 6 failures caused by a one-second normal-response test deadline and an invalid assumption that a 50ms timeout must reach the server. Normal cases now use ten seconds; tiny deadline permits zero or one request.",
+    "An intermediate native full suite failed test_restart_waiting_on_sqlite_does_not_make_old_ready_generation_live with daemon_start_timeout instead of daemon_unresponsive. Isolated rerun and subsequent full suites passed. Root cause remains unconfirmed; no daemon runtime fix was made.",
+    "The failing daemon test skipped its later stop cleanup. Its exact pytest-20 test daemon was stopped through the public CLI; no unrelated process was killed.",
+    "The first log-filter implementation missed lazily imported HTTPcore loggers. Installation after transport construction closed the retained reflected-secret regression.",
+    "Final native and WSL process inventories showed no Asclepius daemon processes remaining. Test HTTP servers close their sockets and join their serving threads."
+  ],
+  "remaining": [
+    "Groq target adapter and strict-schema evaluator gateway",
+    "Independent secret resolution and evidence redaction",
+    "Shared budget integration and immutable per-call provenance handoff",
+    "Coordinator intent-before-network and durable observations",
+    "Final Task 5 review, installed-wheel proof, and local commit",
+    "Hosted Groq acceptance, actual run execution, and later product tasks"
+  ],
+  "fixture_policy": "Checked-in localhost certificate and private key are public synthetic test data. No user keys were read or transmitted. No production trust store was changed."
+}

@@ -10,11 +10,12 @@
 
 **Spec:** [Backend design](../specs/backend-design.md), [pipeline](../specs/evaluation-pipeline.md), [product](../product.md), [feature map](../features/README.md). [RAG design](../specs/rag-testing.md) is a later capability milestone, not implemented by this plan.
 
-Status: implementation started on `codex/cli-evaluator`. Tasks 1 through 4 are verified in
+Status: implementation started on `codex/cli-evaluator`. Tasks 1 through 5 are verified in
 [the foundation evidence](../verification/evidence/cli-foundation.json) and
 [the storage evidence](../verification/evidence/cli-storage.json), and
 [the management evidence](../verification/evidence/cli-management.json), and
-[the daemon evidence](../verification/evidence/cli-daemon.json). Tasks 5 through 12 remain pending.
+[the daemon evidence](../verification/evidence/cli-daemon.json), and
+[the Groq component evidence](../verification/evidence/cli-groq-components.json). Tasks 6 through 12 remain pending.
 Task 4 verifies control and budget components, not queued execution or physical terminal closure.
 
 ## Global Constraints
@@ -369,6 +370,9 @@ Generation leases protect status/start. Do not claim immediate crash detection f
 
 ### Task 5: Real Groq target adapter and evaluator gateway
 
+Component verification uses loopback HTTP/HTTPS and installed wheels on WSL and Windows.
+It does not establish hosted Groq access or queued-run execution.
+
 **Files:** Create `backend/asclepius/{transport,models}.py`, `backend/asclepius/adapters/{__init__,chat}.py`,
 `backend/tests/cli/{test_transport,test_groq_contract}.py`.
 
@@ -376,21 +380,58 @@ Generation leases protect status/start. Do not claim immediate crash detection f
 `ModelGateway.generate(role: str, payload: dict, output_type: type[BaseModel]) -> BaseModel` (async).
 Both consume independently resolved configs and Task 4 budgets, not global API settings.
 
-- [ ] Write local HTTP-boundary tests for actual POST message shape, correct secret reference,
+Transport boundary (2026-10-22): `JsonTransport.post` is the low-level HTTP
+boundary, not a public execution path. Its HTTP loopback support enables real network
+tests; hosted target and evaluator configs still require HTTPS. An explicitly supplied
+verified TLS context supports private trust roots without environment-derived trust.
+Compressed replies are rejected before decoding so response limits also bound decoding
+memory. The checked-in localhost certificate/key are public test fixtures, never user
+credentials or production trust material.
+
+`GroqConnection` binds the snapshot and one shared budget manager. It captures configured
+secret references once per run for consistent authentication/redaction. `ChatAdapter.prepare`
+prepends the profile system prompt once; `execute_prepared` sends the finalized call.
+The convenience `execute(raw_request)` combines those steps. `ModelGateway.prepare` binds
+the work item, pinned role prompt, input, and strict output schema. Its `execute` returns
+an immutable per-call result, including observations when structured output is invalid.
+`generate` returns only the validated output or raises an error carrying that result.
+
+`PreparedCall.request.provider_body_json` retains the finalized redacted wire body,
+including the evaluator schema. This is immutable serialized data, not a nested mutable
+dictionary. Task 7 must persist this request through `begin_operation`, dispatch only
+when `intent.created`, and persist the returned observation/result. Convenience methods
+do not write intents or provide orchestration/replay protection on their own.
+Optional metadata fields preserve older JSON reads; replay comparisons normalize
+through typed contracts without rewriting stored requests or observations.
+
+Evaluator object models must forbid extra fields. Schema normalization requires every
+property, preserves nullable types, and removes default annotations. `jsonschema` checks
+the raw output against the exact prepared schema before Pydantic can insert defaults.
+Open mappings, fixed tuples, and nonlocal schema references are rejected locally.
+Provider errors consume dispatched allowance. Cancellation before dispatch releases unused
+allowance; uncertain authorization and dispatched calls retain it. Validated bounded
+`retry_after` metadata survives HTTP errors without automatic retries. Empty length-limited
+replies retain finish reason, usage and response identity and yield `evaluator_truncated`.
+No automatic mode/model fallback is permitted when strict schema output is unsupported.
+Provider contract references: [Groq chat API](https://console.groq.com/docs/api-reference)
+and [strict structured outputs](https://console.groq.com/docs/structured-outputs).
+Local schema validation follows [the JSON Schema validator API](https://python-jsonschema.readthedocs.io/en/stable/validate/).
+
+- [x] Write local HTTP-boundary tests for actual POST message shape, correct secret reference,
   target/evaluator model independence, valid reply, 401/403/429/5xx, invalid JSON, missing
   choices, refusal, truncation, oversized body, redirects, timeout, and missing usage.
   Assert one dispatched call on errors and zero automatic retries or secret-bearing logs.
-- [ ] Run `python -m pytest tests/cli/test_transport.py tests/cli/test_groq_contract.py -q`; expect failures.
-- [ ] Implement HTTPX with `trust_env=False`, redirects off, total deadline via asyncio timeout,
+- [x] Run `python -m pytest tests/cli/test_transport.py tests/cli/test_groq_contract.py -q`; expect failures.
+- [x] Implement HTTPX with `trust_env=False`, redirects off, total deadline via asyncio timeout,
   streaming body read up to byte cap, and sanitized exceptions. No tools, streaming generation,
   remote actions, or automatic message history in initial target requests. Save redacted request
   content, finish reason, response IDs, usage, and raw-content truncation metadata.
   Preserve synthetic canaries as test evidence; do not confuse them with actual configured keys.
-- [ ] Implement strict JSON-schema evaluator responses with Pydantic validation and explicit
+- [x] Implement strict JSON-schema evaluator responses with Pydantic validation and explicit
   refusal/invalid-output failures. Schema conformance does not validate evidence truth.
   Never silently switch model, endpoint, credentials, or output mode on a provider error.
-- [ ] Repeat tests; expect pass with a real loopback HTTP server substituting only Groq.
-- [ ] Commit Task 5 files: `feat: connect Groq targets and evaluator models`.
+- [x] Repeat tests; expect pass with a real loopback HTTP server substituting only Groq.
+- [x] Commit Task 5 files: `feat: connect Groq targets and evaluator models`.
 
 ### Task 6: Broad pack and four-role contracts
 

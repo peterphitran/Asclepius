@@ -10,6 +10,8 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.6,<3",
     "httpx>=0.28,<1",
+    "jsonschema>=4.23,<5",
+    "referencing>=0.35,<1",
     "portalocker[win32]>=4,<5",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",

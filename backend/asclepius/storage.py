@@ -575,7 +575,7 @@ class Repository:
                 "SELECT request_json,status FROM operations WHERE id=?", (str(request.id),)
             ).fetchone()
             if existing:
-                self._same(existing[0], _json(request))
+                self._same(_json(OperationRequest.model_validate_json(existing[0])), _json(request))
                 return OperationIntent(
                     operation_id=request.id, created=False, status=existing["status"]
                 )
@@ -630,7 +630,7 @@ class Repository:
                 (str(observation.operation_id),),
             ).fetchone()
             if existing:
-                self._same(existing[0], _json(observation))
+                self._same(_json(Observation.model_validate_json(existing[0])), _json(observation))
                 return
             self._owned(connection, str(observation.run_id), instance_id)
             operation = connection.execute(

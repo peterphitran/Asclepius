@@ -46,6 +46,10 @@ and reports remain unverified by that smoke check.
 
 ## Recorded CLI foundation
 
+The earlier [transport slice](verification/evidence/cli-transport.json) tested real loopback
+HTTP/HTTPS. Task 5 now connects target and evaluator components as recorded below.
+Neither record establishes hosted Groq responses or queued evaluation execution.
+
 The [Task 1 record](verification/evidence/cli-foundation.json) covers 45 passing tests on
 WSL and native Windows, Ruff, hashed dependency installs, and installed-wheel help/config
 checks outside the source tree. It includes the initial missing-package failure and
@@ -101,6 +105,26 @@ The daemon reports `execution_available: false`; no queued run is dispatched yet
 Submission uses persisted heartbeat freshness, so abrupt owner loss can leave up to ten
 seconds of queued acceptance before the record becomes stale. Status/start use the OS
 generation lease; enqueue is not an immediate crash detector.
+
+## Recorded Groq provider components
+
+The [Task 5 record](verification/evidence/cli-groq-components.json) covers independent
+Groq target and evaluator configuration, strict schema validation, shared budgets,
+redacted finalized requests, retained replies and provider failures, and older JSON reads.
+Real HTTP/HTTPS fixtures substitute only the provider boundary. Cancellation before
+slot acquisition releases unused allowance. Uncertain dispatch retains it. Provider errors
+retain validated retry timing without automatic retries. Empty length-limited replies
+retain metadata and produce a typed incomplete evaluator result.
+
+Fresh environments installed each platform's hashed lock and rebuilt wheel. The
+installed `backend/scripts/verify_groq.py` proof runs outside the checkout and makes two
+HTTPS requests, validates an evaluator reply, and persists both observations through
+real SQLite budgets. Its temporary store and fixture server are removed afterward.
+
+The record includes exact full-suite results, source hashes, wheel hashes, review findings
+and regressions. No live key or hosted model was used. Built-in checks, four-role agents,
+coordinator execution, reports, comparisons, and physical terminal-close acceptance remain
+later gates. The daemon still reports `execution_available: false`.
 
 ## Feature-map convention
 

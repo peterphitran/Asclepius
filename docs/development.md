@@ -36,6 +36,24 @@ Change the output filename for Windows. A built wheel was also installed and exe
 outside the source directory on each platform. Recorded proof is in
 [the Task 1 evidence](verification/evidence/cli-foundation.json).
 
+## Installed provider-boundary proof
+
+See the [Task 5 verification record](verification/evidence/cli-groq-components.json) for
+platform results, source hashes, and installed-package observations.
+
+After building and installing a wheel in the matching test environment, run from outside
+the checkout with absolute paths:
+
+```text
+python <checkout>/backend/scripts/verify_groq.py <checkout>/backend/tests/cli/fixtures
+```
+
+The script asserts a `site-packages` import, runs two real loopback HTTPS requests using
+synthetic credentials, validates an evaluator reply, and persists both observations with
+real SQLite budgets. It removes its temporary store and closes its server. The checked-in
+localhost key is public test material. No real API key, production trust change, live Groq
+response, queued CLI execution, or four-agent pipeline is involved.
+
 ## Manage local profiles and inspect history
 
 From `backend/`, choose a separate local data directory for each operating system:
@@ -139,9 +157,10 @@ still use schema version 1; that is separate from the SQLite schema version.
 
 The shared `BudgetManager` has tested global, kind, destination, grouping, origin, and
 credential-reference gates plus durable call/completion reservations. It is not yet connected
-to daemon execution. Task 5 must use it for transport and Task 7 must share one manager
+to daemon execution. Task 5 provider components use it, and Task 7 must share one manager
 across all workers. Cleanup operations remain unsupported until a separate budget contract
-exists. Dispatched/uncertain calls never refund their reservations.
+exists. Cancellation while waiting for a slot releases unused allowance. Dispatched calls
+and uncertain authorization outcomes retain their reservations.
 
 ## Python environment
 

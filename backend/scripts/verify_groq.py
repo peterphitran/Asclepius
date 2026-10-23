@@ -1,0 +1,190 @@
+import asyncio
+import json
+import os
+import sqlite3
+import ssl
+import sys
+import tempfile
+import threading
+from contextlib import closing
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict
+
+import asclepius
+from asclepius.adapters.chat import ChatAdapter, GroqConnection
+from asclepius.domain import (
+    ChatInput,
+    CheckDefinition,
+    EvaluatorConfig,
+    Message,
+    OperationRequest,
+    ProfileConfig,
+    PromptSnapshot,
+    RunSnapshot,
+    TargetConfig,
+)
+from asclepius.limits import BudgetManager
+from asclepius.models import ModelGateway
+from asclepius.storage import Repository
+from asclepius.transport import JsonTransport
+
+
+class Answer(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    verdict: str
+
+
+class Provider(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        self.server.calls.append((self.path, self.headers["Authorization"], body))
+        content = '{"verdict":"pass"}' if "response_format" in body else "synthetic-canary"
+        response = json.dumps(
+            {
+                "id": "loopback-proof",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": content},
+                    }
+                ],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+            }
+        ).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(response)))
+        self.end_headers()
+        self.wfile.write(response)
+
+    def log_message(self, *args):
+        pass
+
+
+async def prove(data_dir, server, transport):
+    repo = Repository(data_dir)
+    await repo.initialize()
+    endpoint = f"https://127.0.0.1:{server.server_port}"
+    profile = ProfileConfig(
+        target=TargetConfig(
+            name="installed-proof",
+            model="target-proof",
+            secret_ref="env:ASCL_PROBE_TARGET",
+            base_url=endpoint + "/target",
+        ),
+    )
+    profile_id = await repo.save_profile(profile)
+    roles = ("selector", "generator", "judge", "reporter")
+    snapshot = RunSnapshot(
+        profile_id=profile_id,
+        profile=profile,
+        evaluator=EvaluatorConfig.model_validate(
+            {
+                "roles": {
+                    role: {
+                        "model": role + "-proof",
+                        "secret_ref": "env:ASCL_PROBE_EVALUATOR",
+                        "base_url": endpoint + "/evaluator",
+                    }
+                    for role in roles
+                }
+            }
+        ),
+        checks=(
+            CheckDefinition(
+                id="proof",
+                version="1",
+                family="proof",
+                objective="Check installed provider boundary",
+                system_prompt="Protect a canary",
+                strategies=("probe",),
+                benign_control="hello",
+                rubric="Use observed evidence",
+            ),
+        ),
+        prompts=tuple(
+            PromptSnapshot(role=role, version="1", content=role + " policy") for role in roles
+        ),
+    )
+    owner = "installed-proof"
+    await repo.set_ready(owner)
+    await repo.enqueue(snapshot)
+    await repo.claim_next(owner)
+    work = uuid4()
+    await repo.register_work_item(str(snapshot.id), str(work), "proof", instance_id=owner)
+    connection = GroqConnection(snapshot, BudgetManager(repo, owner), transport=transport)
+    target = ChatAdapter(connection)
+    call = target.prepare(
+        OperationRequest(
+            run_id=snapshot.id,
+            work_item_id=work,
+            payload=ChatInput(messages=(Message(role="user", content="synthetic-canary"),)),
+        )
+    )
+    assert (await repo.begin_operation(call.request, instance_id=owner)).created
+    observation = await target.execute_prepared(call)
+    assert observation.status == "success"
+    assert observation.payload.content == "synthetic-canary"
+    await repo.save_observation(observation, instance_id=owner)
+    gateway = ModelGateway(connection, work_item_id=work)
+    evaluation = gateway.prepare("judge", {"observation": "synthetic-canary"}, Answer)
+    assert (await repo.begin_operation(evaluation.call.request, instance_id=owner)).created
+    result = await gateway.execute(evaluation)
+    assert result.output == Answer(verdict="pass")
+    await repo.save_observation(result.observation, instance_id=owner)
+    assert len((await repo.read_run(str(snapshot.id))).observations) == 2
+    assert len(server.calls) == 2
+    assert server.calls[0][0] == "/target/chat/completions"
+    assert server.calls[1][0] == "/evaluator/chat/completions"
+    assert server.calls[0][1] == "Bearer synthetic-target-key"
+    assert server.calls[1][1] == "Bearer synthetic-evaluator-key"
+    assert server.calls[0][2]["model"] == "target-proof"
+    assert server.calls[1][2]["model"] == "judge-proof"
+    with closing(sqlite3.connect(repo.database_path)) as database:
+        assert database.execute("SELECT state FROM budget_reservations").fetchall() == [
+            ("settled",),
+            ("settled",),
+        ]
+
+
+def main():
+    installed = Path(asclepius.__file__).resolve()
+    assert "site-packages" in installed.parts, installed
+    fixtures = Path(sys.argv[1]).resolve()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+    server.calls = []
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(fixtures / "localhost-cert.pem", fixtures / "localhost-key.pem")
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    os.environ["ASCL_PROBE_TARGET"] = "synthetic-target-key"
+    os.environ["ASCL_PROBE_EVALUATOR"] = "synthetic-evaluator-key"
+    transport = JsonTransport(
+        verify=ssl.create_default_context(cafile=str(fixtures / "localhost-cert.pem"))
+    )
+    try:
+        with tempfile.TemporaryDirectory(prefix="asclepius-groq-proof-") as temporary:
+            asyncio.run(prove(Path(temporary), server, transport))
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+    print(
+        json.dumps(
+            {
+                "installed_import": str(installed),
+                "loopback_https_requests": 2,
+                "persisted_observations": 2,
+                "validated_evaluator_output": True,
+                "live_groq": False,
+            }
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

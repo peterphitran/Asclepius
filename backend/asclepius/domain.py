@@ -1,4 +1,6 @@
+import re
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
@@ -19,6 +21,35 @@ def _utc_timestamp(value: datetime) -> datetime:
 
 
 UtcTime = Annotated[datetime, AfterValidator(_utc_timestamp)]
+
+_HTTP_DATE = re.compile(
+    r"(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), [0-9]{2} "
+    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [0-9]{4} "
+    r"[0-9]{2}:[0-9]{2}:[0-9]{2} GMT|"
+    r"(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), [0-9]{2}-"
+    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-[0-9]{2} "
+    r"[0-9]{2}:[0-9]{2}:[0-9]{2} GMT|"
+    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) "
+    r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (?:[0-9]{2}| [0-9]) "
+    r"[0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4})"
+)
+
+
+def _retry_after(value: str) -> str:
+    if re.fullmatch(r"[0-9]+", value):
+        return value
+    if _HTTP_DATE.fullmatch(value):
+        try:
+            parsedate_to_datetime(value)
+            return value
+        except (ValueError, OverflowError):
+            pass
+    raise ValueError("Retry-After requires decimal seconds or an HTTP date.")
+
+
+RetryAfter = Annotated[
+    str, Field(min_length=1, max_length=128, strict=True), AfterValidator(_retry_after)
+]
 
 
 def _endpoint(value: str) -> str:
@@ -196,6 +227,8 @@ class ChatOutput(Contract):
     response_id: str | None = None
     finish_reason: str | None = None
     usage: TokenUsage = Field(default_factory=TokenUsage)
+    raw_content_bytes: NonNegativeInt | None = None
+    content_redacted: bool = False
 
 
 class Variant(Contract):
@@ -213,6 +246,7 @@ class OperationRequest(Contract):
     work_item_id: UUID
     actor: Identity = "target"
     payload: ChatInput
+    provider_body_json: str | None = None
 
 
 class OperationIntent(Contract):
@@ -234,7 +268,9 @@ class Observation(Contract):
     finished_at: UtcTime | None = None
     payload: ChatOutput | None = None
     error_code: str | None = None
+    retry_after: RetryAfter | None = None
     truncated: bool = False
+    request_payload: ChatInput | None = None
 
     @model_validator(mode="after")
     def validate_outcome(self) -> "Observation":

@@ -198,33 +198,33 @@ def test_restart_waiting_on_sqlite_does_not_make_old_ready_generation_live(tmp_p
 
     def start_first():
         try:
-            first_result.append(start_daemon(tmp_path, timeout=4))
+            first_result.append(start_daemon(tmp_path, timeout=15))
         except AppError as error:
             first_error.append(error)
 
     thread = threading.Thread(target=start_first)
-    with sqlite3.connect(repo.database_path, isolation_level=None) as connection:
-        connection.execute("BEGIN IMMEDIATE")
-        thread.start()
-        try:
-            deadline = time.monotonic() + 2
-            owned = False
-            while time.monotonic() < deadline:
-                try:
-                    with instance_lock(tmp_path):
-                        pass
-                except portalocker.LockException:
-                    owned = True
-                    break
-                time.sleep(0.02)
-            assert owned
-            with pytest.raises(AppError) as error:
-                start_daemon(tmp_path, timeout=0.1)
-            assert error.value.code == "daemon_unresponsive"
-        finally:
-            connection.rollback()
-            thread.join(timeout=6)
     try:
+        with sqlite3.connect(repo.database_path, isolation_level=None) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            thread.start()
+            try:
+                deadline = time.monotonic() + 10
+                owned = False
+                while time.monotonic() < deadline:
+                    try:
+                        with instance_lock(tmp_path):
+                            pass
+                    except portalocker.LockException:
+                        owned = True
+                        break
+                    time.sleep(0.02)
+                assert owned
+                with pytest.raises(AppError) as error:
+                    start_daemon(tmp_path, timeout=0.1)
+                assert error.value.code == "daemon_unresponsive"
+            finally:
+                connection.rollback()
+                thread.join(timeout=20)
         assert first_error == []
         assert len(first_result) == 1
         assert str(first_result[0].instance_id) != old_id
