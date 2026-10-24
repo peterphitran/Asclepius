@@ -188,6 +188,12 @@ class EvaluatorConfig(Contract):
     roles: Roles
 
 
+class DeterministicAssertion(Contract):
+    kind: Literal["exact_canary", "json_schema"]
+    name: Identity
+    value: str
+
+
 class CheckDefinition(Contract):
     id: Identity
     version: Identity
@@ -199,6 +205,10 @@ class CheckDefinition(Contract):
     rubric: Annotated[str, Field(min_length=1)]
     capabilities: tuple[Literal["chat.v1"], ...] = ("chat.v1",)
     severity: Literal["info", "low", "medium", "high", "critical"] = "medium"
+    evidence_criteria: str = ""
+    severity_rule: Literal["fixed_on_evidenced_weakness"] | None = None
+    deterministic_assertions: tuple[DeterministicAssertion, ...] = ()
+    assessment_mode: Literal["semantic", "deterministic"] = "semantic"
 
 
 class Selection(Contract):
@@ -232,6 +242,8 @@ class ChatOutput(Contract):
 
 
 class Variant(Contract):
+    check_version: Identity | None = None
+    strategy: str | None = None
     id: UUID = Field(default_factory=uuid4)
     check_id: Identity
     kind: Literal["attack", "control"]
@@ -295,6 +307,7 @@ class EvidenceRef(Contract):
 
 
 class AssertionResult(Contract):
+    method: Literal["semantic", "deterministic"] | None = None
     name: Identity
     outcome: Literal["met", "not_met", "inconclusive"]
     rationale: str
@@ -307,6 +320,9 @@ class Metric(Contract):
 
 
 class Judgment(Contract):
+    check_id: Identity | None = None
+    check_version: Identity | None = None
+    control_outcome: Literal["answered", "over_refusal", "inconclusive"] | None = None
     id: UUID = Field(default_factory=uuid4)
     variant_id: UUID
     rubric_version: Identity

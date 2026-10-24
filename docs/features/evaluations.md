@@ -1,6 +1,7 @@
 # Evaluation Checks
 
-Status: planned. Select security checks, execute them, and explain their outcomes.
+Status: partial. The built-in pack and four role contracts exist. Queued execution
+and live model assessment remain pending.
 
 ## Sub-features
 
@@ -17,12 +18,18 @@ Status: planned. Select security checks, execute them, and explain their outcome
 
 ## How to get to it (user POV)
 
-Select checks when submitting a run and inspect their results afterward.
-Broad initial coverage is agreed. Proposed first model/chat families: instruction
-override and role spoofing, protected synthetic-context disclosure, encoded/obfuscated
-instruction attempts, conflicting-context manipulation, and application-defined policy
-boundary checks. These are a proposed taxonomy, not an implemented or approved check list.
-Exact checks, rubrics, variant counts, and selection flags still need design.
+List definitions with `asclepius checks list --pack broad-chat-v1 --json`. Submit the
+pack with `asclepius run <target> --pack broad-chat-v1 --evaluator <evaluator.toml>`
+after starting the daemon and configuring credentials. Submission accepts queued work;
+the daemon still reports `execution_available: false`.
+
+The pack has four objectives in each of five families, instruction priority, protected
+synthetic context, encoded instructions, conflicting context, and application policy.
+The [implementation plan](../plans/2026-10-21-cli-evaluator.md#task-6-broad-pack-and-four-role-contracts)
+lists the 20 stable IDs. Each check pins three attack strategies, a fixed benign control,
+a protected system contract, a rubric, evidence criteria, and a severity rule. The four
+cases per check give 80 cases. These probe a supplied synthetic contract and do not
+establish vulnerabilities in Groq infrastructure.
 
 Indirect document injection, retrieval/access isolation, multi-turn attacks, and tool
 misuse require their respective capabilities and acceptance milestones. A hosted chat
@@ -38,8 +45,12 @@ transport, persistence, and result handling in the path.
 
 - Model confidence alone does not establish a valid judgment.
 - A timeout or malformed reply is not a passing check.
-- The pipeline design defines role ownership and contract content. Exact schemas,
-  prompts, budgets, and model configuration remain implementation choices.
+- The role runner uses immutable pinned prompts and typed proposals with a required
+  dispatch callback. The coordinator must persist intent before dispatch and observations
+  before interpreting outputs. That integration remains Task 7.
+- Local canary/schema assertions remain separate from semantic judgments. Quotes must
+  occur in the actual reply. Reporter cannot change IDs, severity, or evidence and builds
+  reproduction from the recorded request. Control over-refusal is a separate diagnostic.
 - Chat-only observations cannot establish retrieved ranks or indexing success. Require
   the explicit interfaces and evidence defined by [RAG testing](../specs/rag-testing.md).
 - Freeze expected results before execution; do not let generated fixtures or a Judge

@@ -48,8 +48,9 @@ not identify a source folder or automatically start its target application.
 ## Intended workflow
 
 The following commands illustrate the agreed full interaction. Profile management and
-persisted inspection and manual daemon control exist; built-in packs, evaluation execution, and
-reports do not. See [development](development.md) for implemented syntax and limitations.
+persisted inspection, manual daemon control, a built-in check pack, and four typed agent
+roles exist. Queued evaluation execution and reports remain pending.
+See [development](development.md) for implemented syntax and limitations.
 
 ```text
 asclepius targets add my-rag-app ...connection details...
@@ -70,7 +71,7 @@ restart recovery require explicit handling; detachment alone does not solve them
 The [backend design](specs/backend-design.md) owns component boundaries, local queue and
 storage, lifecycle states, control policy, and the transition from the existing API.
 The [evaluation pipeline](specs/evaluation-pipeline.md) owns agent contracts and evidence
-handoffs. These designs do not describe implemented capabilities.
+handoffs. See [status](status.md) for the implemented subset of these designs.
 The [RAG testing design](specs/rag-testing.md) extends checks to ingestion, direct retrieval,
 and grounding where the target exposes those capabilities, without adding a frontend.
 

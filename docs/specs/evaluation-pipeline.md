@@ -1,7 +1,8 @@
 # Four-agent evaluation pipeline
 
-Status: retained evaluation design. Agent contracts below guide implementation; no
-pipeline exists in the current runtime.
+Status: partial implementation. Task 6 implements the four role contracts, pinned pack
+and prompts, and deterministic evidence assertions. The coordinator and complete persisted
+execution pipeline remain pending.
 
 ## Roles and handoffs
 
@@ -38,7 +39,8 @@ The same model can serve multiple roles with separate prompts and inputs.
 Initially use Groq for evaluator roles and the target, with independent configuration
 as defined in the [backend design](backend-design.md#connections-and-model-configuration).
 Record role/model identity; same-provider evaluation is not proof of an independent judge.
-Which stages use model calls versus deterministic logic remains open.
+All four roles use validated model proposals. Code owns IDs, protected setup, controls,
+coverage, provenance checks, severity, and deterministic exact-canary/schema assertions.
 
 The coordinator owns ordering, limits, persistence, and lifecycle changes.
 Workers provide capacity in the daemon. Agents return structured values.
@@ -63,8 +65,16 @@ Preserve interrupted-run results. The initial recovery policy creates an explici
 linked retry with a new run ID, as defined in the backend design. It does not replay
 uncertain external requests automatically or claim in-place resume.
 
-Exact field types, structured-output schemas, and serialization formats remain
-implementation work. Raw provider strings are not internal handoff contracts.
+Typed field definitions and strict proposal schemas now live in `asclepius.domain` and
+`asclepius.agents`. Optional lineage/assertion fields preserve older JSON reads. Legacy
+judgments without lineage cannot initiate a new report. Raw provider strings are not
+internal handoff contracts.
+
+`AgentRunner(connection, *, dispatch)` requires a callback receiving the gateway and
+finalized prepared request. The coordinator must save intent before network dispatch and
+save the returned observation before role interpretation. There is no default dispatch
+or agent-owned database/lifecycle state. This seam is implemented; its durable integration
+remains Task 7.
 
 ## Reporter and report export
 

@@ -155,7 +155,7 @@ def test_cli_plan_validation_and_missing_resources_are_structured(tmp_path):
         "run",
         "unknown",
         "--pack",
-        "broad-chat-v1",
+        "unknown-pack",
         "--evaluator",
         str(evaluator_file(tmp_path)),
     )

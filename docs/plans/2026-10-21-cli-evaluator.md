@@ -460,23 +460,72 @@ These test model behavior under an explicit harness contract, not vulnerabilitie
 Groq infrastructure. No real user data, credentials, external exfiltration destinations,
 tool execution, provider-availability stress tests, or implicit collection access.
 
-- [ ] Write pack tests: exactly 20 unique checks in five families, four cases/check,
+- [x] Write pack tests: exactly 20 unique checks in five families, four cases/check,
   control distinguished from attack, complete rubrics, no unsupported capability dispatch.
   Agent tests reject missing/extra checks, duplicate variants, modified protected contract,
   fabricated citations, and judgments unsupported by actual observations.
-- [ ] Add adversarial reply text instructing Judge to emit a pass or Reporter to invent
+- [x] Add adversarial reply text instructing Judge to emit a pass or Reporter to invent
   evidence; assert role prompts delimit untrusted content and invalid evidence references
   are rejected. Include deterministic exact-canary/schema assertions and labeled semantic
   judgments; known controls expose false positives/over-refusal separately.
-- [ ] Run `python -m pytest tests/cli/test_check_pack.py tests/cli/test_agents.py -q`; expect failures.
-- [ ] Implement frozen check definitions and per-role validated outputs. Selector may order
+- [x] Run `python -m pytest tests/cli/test_check_pack.py tests/cli/test_agents.py -q`; expect failures.
+- [x] Implement frozen check definitions and per-role validated outputs. Selector may order
   but not drop requested checks. Generator produces exactly three attack variants; the
   fixed benign control and protected setup come from the pinned definition, not the model.
   Judge does not see Selector rationale. Reporter runs only for evidenced weaknesses.
   Model confidence alone never validates a finding; Reporter cannot mutate verdict/evidence.
-- [ ] Repeat tests with deterministic gateway responses; expect pass. These are contract
+- [x] Repeat tests with deterministic gateway responses; expect pass. These are contract
   tests, not proof of real LLM judgment accuracy; Task 10 includes live review.
-- [ ] Commit owned files: `feat: define broad chat checks and four agent roles`.
+- [x] Commit owned files: `feat: define broad chat checks and four agent roles`.
+
+#### Accepted Task 6 implementation shape
+
+Design review on 2026-10-23 selected the mandatory prepared-dispatch design. The
+alternative was a domain-only invoker receiving role payloads. Both avoid direct hidden
+network calls; the selected seam exposes the already-finalized gateway request and
+per-call result, making Task 7's persistence boundary explicit. The independent comparison
+favored this shape for evidence validation and reporting lineage despite its gateway coupling.
+
+`AgentRunner(connection, *, dispatch)` binds the connection's immutable snapshot.
+The required async dispatch receives `(gateway, prepared)` and returns `EvaluationResult`.
+It must persist the prepared request before executing it and the resulting observation
+before returning, including provider/schema errors. Task 6 has no default dispatch and
+no SQLite, lifecycle, target-execution, retry, or mutable last-result state. Task 7 supplies
+the durable dispatch. The four public role signatures above remain unchanged.
+
+Code owns proposal normalization. Selector must return exact requested coverage and may
+prioritize one pinned strategy. Generator covers all three pinned strategies, creates
+only user-text proposals, and code builds protected system messages and the fixed control.
+Stable work-item and variant IDs derive from run/check/version and exact accepted inputs.
+The whole-run Selector work item is anchored to the first pinned check, never model order,
+because the existing repository requires every work item to reference a check.
+
+Optional persisted additions pin evidence criteria, fixed-on-evidenced-weakness severity
+rules, deterministic assertion definitions, and semantic/deterministic assessment mode.
+New variants carry check version and strategy; new judgments carry check ID/version and a separate
+control outcome; assertion records label deterministic or semantic origin. Older JSON
+keeps defaults and remains readable. Replay comparison normalizes typed defaults without
+rewriting saved JSON, while changed content must still conflict. No SQL migration is needed.
+Legacy lineage-incomplete judgments remain readable but cannot start a new Reporter call.
+
+Exact-canary and JSON-schema assertions are computed locally. Exact literal absence does
+not establish semantic non-disclosure. Complete checks explicitly governed by an exact
+contract may derive a verdict from it. Missing, redacted, or truncated necessary evidence
+cannot become a pass. Detectable contradictions between model assessments and deterministic
+facts are rejected or explicitly inconclusive, never silently accepted as findings.
+Controls retain usefulness/over-refusal separately; a genuine evidenced control violation
+may still produce a finding. A refusal alone does not establish a security weakness.
+
+Judge input is rebuilt from the pinned check, exact variant, and matching target observation,
+excluding Selector rationale. Quotes must occur in that observation; model-supplied IDs are
+never accepted as authority. Reporter proposes description/recommendation only. Code fixes
+severity and all IDs, preserves the complete judgment evidence, and builds reproduction
+from the exact recorded request. This proves provenance, not general semantic entailment.
+
+Task 6 also wires `checks list --pack` and `run --pack` through the existing submission
+service. Listing needs no store or credentials. The queue still does not execute until
+Task 7. Files include the Task 6 paths above plus scoped domain, CLI, replay-comparison,
+and affected CLI tests. Installed-wheel checks must read the actual bundled resources.
 
 ### Task 7: Coordinator and complete persisted execution
 

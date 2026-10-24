@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from asclepius import __version__
+from asclepius.checks import load_pack, load_pack_plan
 from asclepius.config import data_directory, load_evaluator, load_plan, load_target
 from asclepius.domain import AppError, RunState
 from asclepius.maintenance import migrate_storage
@@ -71,8 +72,10 @@ def parser() -> argparse.ArgumentParser:
     daemon_actions.add_parser("status")
     storage = commands.add_parser("storage", help="Explicit stopped-store maintenance.")
     storage.add_subparsers(dest="action", required=True).add_parser("migrate")
+    checks = commands.add_parser("checks", help="List built-in checks.")
+    listing = checks.add_subparsers(dest="action", required=True).add_parser("list")
+    listing.add_argument("--pack", required=True)
     for name in (
-        "checks",
         "compare",
         "report",
     ):
@@ -136,18 +139,13 @@ async def dispatch(options, json_output: bool) -> None:
         else:
             data = await repo.list_profiles(limit=options.limit, cursor=options.cursor)
     elif command == "run":
-        if options.pack is not None:
-            raise AppError(
-                "pack_unavailable",
-                "Built-in packs are not implemented. Supply --plan with complete checks "
-                "and role prompts.",
-                2,
-            )
-        plan = load_plan(options.plan)
+        plan = load_pack_plan(options.pack) if options.pack is not None else load_plan(options.plan)
         identity = await service.submit(
             options.profile, load_evaluator(options.evaluator), plan.checks, prompts=plan.prompts
         )
         data = {"id": identity, "state": "queued", "meaning": "Accepted, not executed."}
+    elif command == "checks":
+        data = [check.model_dump(mode="json") for check in load_pack(options.pack)]
     elif command == "runs":
         if options.action == "list":
             data = await repo.list_runs(

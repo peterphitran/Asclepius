@@ -373,7 +373,7 @@ class Repository:
                 "SELECT snapshot_json FROM runs WHERE id=?", (identity,)
             ).fetchone()
             if existing:
-                self._same(existing[0], _json(snapshot))
+                self._same(_json(RunSnapshot.model_validate_json(existing[0])), _json(snapshot))
                 return identity
             self._ready(connection)
             self._profile_row(connection, snapshot.profile_id)
@@ -468,7 +468,7 @@ class Repository:
                 (run_id, work_item_id, stage),
             ).fetchone()
             if existing:
-                self._same(existing[0], _json(output))
+                self._same(_json(_STAGE.validate_json(existing[0])), _json(output))
                 return _STAGE.validate_json(existing[0])
             run_row = self._owned(connection, run_id, instance_id)
             work = connection.execute(

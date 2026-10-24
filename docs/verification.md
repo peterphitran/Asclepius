@@ -122,8 +122,27 @@ HTTPS requests, validates an evaluator reply, and persists both observations thr
 real SQLite budgets. Its temporary store and fixture server are removed afterward.
 
 The record includes exact full-suite results, source hashes, wheel hashes, review findings
-and regressions. No live key or hosted model was used. Built-in checks, four-role agents,
-coordinator execution, reports, comparisons, and physical terminal-close acceptance remain
+and regressions. No live key or hosted model was used. At the Task 5 checkpoint, built-in
+checks and four-role agents remained future work; Task 6 implements those components below.
+Coordinator execution, reports, comparisons, and physical terminal-close acceptance remain
+later gates. The daemon still reports `execution_available: false`.
+
+## Recorded broad pack and role contracts
+
+The [Task 6 record](verification/evidence/cli-agents.json) covers the 20-check pack,
+80-case generation, four typed role contracts, fixed controls, evidence provenance,
+local canary/schema assertions, offline listing, and queued pack submission. It retains
+review findings and regressions, final reviewer responses, source hashes, and wheel hashes.
+The final suites passed 305 WSL tests and 304 native Windows tests with one existing
+WSL-only skip. Ruff lint and formatting checks passed.
+
+`backend/scripts/verify_agents.py` runs against each final installed wheel outside the
+checkout. It reads bundled resources and drives the public CLI. It uses a controlled
+ready record and deterministic callbacks through real gateway preparation. It does not
+start a daemon, send provider requests, or persist role observations through a coordinator.
+Its synthetic target observation does not establish real model behavior. No live key is used.
+
+The coordinator, queued execution, semantic accuracy, comparisons, and report export remain
 later gates. The daemon still reports `execution_available: false`.
 
 ## Feature-map convention

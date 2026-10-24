@@ -23,7 +23,7 @@ Use `requirements-cli-windows.lock` on native Windows. Locks were resolved with 
 3.12 on WSL and Python 3.13 on Windows. They currently include legacy dependencies too.
 Do not apply them to an unrelated environment or replace the original checkout's `.venv`.
 Validation checks secret references, not secret values or provider availability. No key
-is needed to validate the examples. Registry, comparison, and export commands still
+is needed to validate the examples. Comparison and export commands still
 exit 5 with `not_implemented`. Accepting a command name is not proof of evaluation execution.
 
 To regenerate a lock in its matching platform environment:
@@ -53,6 +53,17 @@ synthetic credentials, validates an evaluator reply, and persists both observati
 real SQLite budgets. It removes its temporary store and closes its server. The checked-in
 localhost key is public test material. No real API key, production trust change, live Groq
 response, queued CLI execution, or four-agent pipeline is involved.
+
+## Inspect the built-in pack
+
+```text
+asclepius checks list --pack broad-chat-v1 --json
+```
+
+Listing reads installed resources without credentials, a store, or a daemon. The pack
+contains 20 checks across five families. Generation produces three attacks and one fixed
+benign control per check, for 80 cases. This count describes the pinned coverage; it does
+not establish model judgment accuracy.
 
 ## Manage local profiles and inspect history
 
@@ -99,6 +110,7 @@ versioned JSON file. The [custom example](../backend/examples/submission-plan.js
 input for this interface, not a verified attack pack or proof of model evaluation.
 
 ```text
+asclepius --data-dir <local-directory> run groq-target --pack broad-chat-v1 --evaluator examples/groq-evaluator.toml --json
 asclepius --data-dir <local-directory> run groq-target --plan examples/submission-plan.json --evaluator examples/groq-evaluator.toml --json
 asclepius --data-dir <local-directory> runs cancel <run-id> --json
 asclepius --data-dir <local-directory> runs retry <run-id> --json
@@ -107,7 +119,9 @@ asclepius --data-dir <local-directory> runs retry <run-id> --json
 Set the target and evaluator environment references before submitting. Their values never
 enter snapshots. Submission checks this shell's environment, not the future daemon's
 environment. Execution must resolve references again. Built-in `--pack broad-chat-v1`
-returns `pack_unavailable` until Task 6 supplies the registry and prompts.
+pins the bundled checks and four role prompts through the same service as `--plan`.
+Legacy custom plans still read and queue. The new role runner requires exactly three
+strategies per check; the earlier one-strategy custom example demonstrates submission only.
 Successful submission means queued acceptance, not completed evaluation. Retry requires a
 failed, cancelled, or interrupted source and an active original profile. It creates a new ID
 linked to the source and preserves the saved configuration, checks, prompts, and limits.
