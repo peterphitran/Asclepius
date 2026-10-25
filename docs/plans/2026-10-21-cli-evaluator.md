@@ -616,20 +616,76 @@ extend coordinator/daemon/services/storage/process.
 
 **Interfaces:** Uses Tasks 2–4/7 interfaces; no new run states or resume endpoint.
 
-- [ ] Write process tests that cancel queued work without calls; cancel active work stops
+- [x] Write process tests that cancel queued work without calls; cancel active work stops
   new calls while saving bounded in-flight replies; stop drains active but leaves queued;
   stop timeout reports still draining. `runs watch` interruption never cancels execution.
-- [ ] Inject process termination before send, after target receipt, and after stage commit.
+- [x] Inject process termination before send, after target receipt, and after stage commit.
   On manual restart assert previous running work is interrupted, uncertain intent retained,
   queued work available, no automatic replay, and retry yields a linked new ID/config.
   Test CLI submission racing drain: reject or durably queue, never lose accepted work.
-- [ ] Run `python -m pytest tests/cli/test_recovery.py tests/cli/test_run_control.py -q`; expect failures.
-- [ ] Implement cancellation checkpoints around rate/budget/role/target dispatch and durable
-  owner-checked finalization. Restart recovery runs only after acquiring exclusive ownership.
+- [x] Run focused control/recovery tests. Existing runtime contracts largely pass; retain the
+  reproduced drain-race RED and review-proof RED/GREEN regressions separately from setup failures.
+- [x] Verify existing Task 7 cancellation checkpoints around rate/budget/role/target dispatch
+  and owner-checked finalization; correct the reproduced daemon admission race. Restart
+  recovery runs only after acquiring exclusive ownership.
   Inactive old owner cannot append results to a new run or overwrite a final state.
-- [ ] Repeat tests, asserting source evidence unchanged, no new calls after cancel checkpoint,
+- [x] Repeat tests, asserting source evidence unchanged, no new calls after cancel checkpoint,
   and no same-ID requeue. Expect pass.
-- [ ] Commit owned changes: `feat: preserve evidence across cancellation and crashes`.
+- [x] Commit owned changes: `feat: preserve evidence across cancellation and crashes`.
+
+#### Accepted Task 8 implementation shape
+
+Task 8 retains the Task 7 runtime types, coordinator boundaries, schema v3, and existing
+public CLI. Independent design comparison selected explicit scenario functions over a
+scenario registry. A small fixture-owned process context owns daemon identity/handles,
+provider response gates, child processes, and cleanup. Existing domain types and immutable
+raw evidence snapshots support assertions. A closed mapping for the three crash points
+may share their rate/gate setup without becoming a workflow engine.
+
+The proof harness uses actual CLI subprocesses, detached daemon, verified loopback HTTPS,
+and SQLite. Normal lifecycle scenarios exclude production fault switches and database
+mutation to manufacture process states. Separate negative tests deliberately corrupt saved
+evidence to prove the validators reject it. Read-only predicates wait for durable milestones. RPM 1 holds a
+Generator intent before send after Selector commits. Selective target response gating
+holds a received request before its observation. RPM 5 holds the next target after the
+first Reporter/finding commit. These fixture counts apply only to the isolated shared
+origin/account scenario; durable recovery still labels pending outcomes unknown.
+
+Acquire a Linux pidfd or native Windows process handle before the final matching
+PID/generation/OS-ownership check, then terminate and wait through that retained identity.
+Only fixture-owned daemon processes are terminated. Watch uses SIGINT to its owned POSIX
+child; native Windows uses a new fixture-owned console, a separate controller attached only
+to that watcher, and a strict attached-process membership guard before generating Ctrl+C.
+The native watcher uses the base interpreter with `-S` and the intended environment
+site-packages bootstrap, asserting the exact imported module path. The venv launcher
+capability probe introduced an extra process and safely aborted before signaling.
+The controller detaches from any inherited console first; the application console and
+detached daemon are outside the signal target. Injected KeyboardInterrupt alone cannot
+stand in for native OS-event proof. Physical keyboard/terminal-close and sleep/shutdown
+acceptance remain Task 10.
+
+Extend provider fixture gates and a structured CLI-result helper without weakening existing
+success assertions. Keep explicit SQLite closing and deterministic resource cleanup; permit
+only expected peer-disconnect handling after deliberate client termination. There are no
+cleanup sleeps/retries masking leaked handles. The installed-wheel driver shares the same
+scenario functions, asserts site-packages imports, emits observed identities/results, and
+runs outside the checkout on WSL and native Windows.
+
+Assertions cover queued cancellation with no calls; active target/evaluator cancellation
+with bounded issued evidence and no later calls; rate-wait cancellation and allowance;
+active drain, queued preservation, timeout ownership, submission/drain race, and watcher
+interruption without cancellation. Crash/restart tests prove unknown intents, failed pending
+attempts, preserved known observations/findings, no automatic replay, and available queued
+work. Linked retry uses new run/variant/operation identities with the source's pinned plan
+and unchanged original evidence. Repository-level stale-owner append/overwrite rejection
+complements public process tests; identical replay reads remain allowed.
+
+A focused regression reproduced the ready-read/drain/claim race: stop can commit between
+readiness and claim, causing an unclean serve exit. The narrow correction accepts only
+`daemon_unavailable` after checking the same generation is draining; unrelated errors
+still propagate. Existing final cleanup already awaited active work; evidence loss was
+not established by that regression. Final platform suites and installed recovery proofs
+are retained in [Task 8 evidence](../verification/evidence/cli-recovery.json).
 
 ### Task 9: Findings, compatible comparisons, reports, and charts
 

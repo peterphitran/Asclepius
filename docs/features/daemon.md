@@ -1,8 +1,10 @@
 # Background Daemon
 
 Status: manual detached control, readiness, heartbeat, and graceful stop are implemented.
-The budget manager is tested separately. Scheduling, model execution, restart recovery,
-and physical terminal-close acceptance are not implemented or fully verified.
+Scheduling and controlled model execution are verified by [Task 7](../verification/evidence/cli-pipeline.json).
+[Task 8](../verification/evidence/cli-recovery.json) verifies active drain, timeout ownership,
+submission racing drain, and manual restart after process loss. Physical terminal-close,
+sleep/shutdown, and hosted-provider acceptance remain Task 10.
 
 ## Sub-features
 
@@ -21,7 +23,9 @@ with stopped/draining/stale control fails without creating a run; repeated start
 the existing instance. Abrupt loss can leave up to ten seconds of fresh persisted readiness,
 so submission may still accept queued work that waits for manual restart.
 Use `daemon start`, `daemon status`, and `daemon stop --timeout <seconds>` with the shared
-`--data-dir`. Current status includes `execution_available: false`: accepted runs stay queued.
+`--data-dir`. Ready status includes `execution_available: true`; the coordinator claims
+queued runs within configured limits. A timed-out stop reports draining under the same
+PID and generation and lets active work finish. Queued work waits for manual restart.
 See [daemon commands and migration](../development.md#control-the-local-daemon).
 
 ## Driving it with the terminal

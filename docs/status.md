@@ -1,8 +1,8 @@
 # Implementation Status
 
-Implementation checkpoint on 2026-10-24 America/Chicago, branch `codex/cli-evaluator`.
+Implementation checkpoint on 2026-10-25 America/Chicago, branch `codex/cli-evaluator`.
 
-Tasks 1 through 7 implement CLI management, SQLite history, manual detached daemon
+Tasks 1 through 8 implement CLI management, SQLite history, manual detached daemon
 control, provider components, the broad pack, and persisted evaluation execution. The
 daemon claims bounded queued work and routes it through the coordinator. Prepared request
 intent precedes every call; observations precede role acceptance; stage failures preserve
@@ -32,7 +32,7 @@ discarding the original removal work.
 | Migrations | `backend/alembic/` | Inherited Postgres revisions; current database revision is not verified. |
 | Fixtures | `backend/app/seed.py` | Resets domain data and inserts simulated records. |
 | Infrastructure | `backend/docker-compose.yml` | Postgres and Redis containers; Redis is unused by execution. |
-| Tests | `backend/tests/` | Real HTTP/HTTPS provider fixtures, SQLite persistence and budgets, process checks, and legacy API cases. See the [Task 7 results](verification/evidence/cli-pipeline.json). Native Windows skips the WSL-only mount test. |
+| Tests | `backend/tests/` | Real HTTP/HTTPS provider fixtures, SQLite persistence and budgets, process checks, and legacy API cases. See the [Task 7 execution results](verification/evidence/cli-pipeline.json) and [Task 8 recovery results](verification/evidence/cli-recovery.json). Native Windows skips the WSL-only mount test. |
 
 Campaign creation stores queued records and returns an identifier. Nothing dispatches
 them to a worker or sends evaluation requests to a target.
@@ -49,10 +49,11 @@ Hosted Groq responses and semantic judgment accuracy remain unverified.
 Legacy plans remain readable and can queue, but the role runner requires three strategies
 per check. Legacy judgments without check lineage cannot initiate Reporter. JSON-schema
 violation findings require the entire reply as evidence within the 4096-byte quote cap.
-Startup interrupts prior owned runs without replaying uncertain requests. Exhaustive
-crash/cancellation/retry acceptance remains Task 8. Task 7 proves the normal execution
-path through real CLI subprocesses, detached daemon, HTTPS fixture, and SQLite. Deterministic
-fixture judgments do not establish live model accuracy.
+Startup interrupts prior owned runs without replaying uncertain requests. Task 8 verifies
+queued and active cancellation, drain timeout, watcher OS interruption, three process-crash
+boundaries, manual recovery, and linked retry through public CLI subprocesses, detached
+daemons, HTTPS fixtures, and SQLite on WSL and native Windows. Task 7 proves normal
+execution. Deterministic fixture judgments do not establish live model accuracy.
 Submission's fresh-heartbeat gate permits up to ten seconds of queued acceptance after a
 hard crash; OS-liveness probes protect status/start, not the enqueue transaction.
 Physical terminal-close acceptance remains pending. One native creator-exit test failed

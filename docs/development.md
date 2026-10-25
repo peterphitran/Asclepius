@@ -80,6 +80,23 @@ verified loopback HTTPS, SQLite, and deterministic provider replies. Its sibling
 technical failure paths, stops its daemons, and removes its temporary stores. It does
 not contact hosted models or establish semantic judgment accuracy.
 
+## Installed cancellation and recovery proof
+
+After installing the final wheel, run outside the checkout:
+
+```text
+python <checkout>/backend/scripts/verify_recovery.py --certificates <checkout>/backend/tests/cli/fixtures
+```
+
+Keep `recovery_fixture.py` and `pipeline_fixture.py` beside the driver. It requires the
+package inside the executing environment's `site-packages`. It drives cancellation,
+drain, OS watcher interruption, three owned-daemon crash points, manual restart, and
+linked retry through real CLI/HTTPS/SQLite. It terminates only retained owned daemon
+handles. On Windows it sends Ctrl+C only in a dedicated watcher console after checking
+its exact process membership. These checks use synthetic credentials and deterministic
+replies. The driver closes its servers, stops owned daemons, and removes temporary stores.
+Physical keyboard and terminal-close acceptance remain Task 10.
+
 ## Manage local profiles and inspect history
 
 From `backend/`, choose a separate local data directory for each operating system:

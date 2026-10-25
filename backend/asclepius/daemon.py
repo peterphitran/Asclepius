@@ -51,7 +51,19 @@ async def serve(data_dir: Path, *, instance_id: str, policy: DaemonConfig | None
                                 await repo.request_stop(instance_id)
                     if failure is None and control.state == "ready":
                         while len(tasks) < policy.limits.active_runs:
-                            snapshot = await repo.claim_next(instance_id, limits=policy.limits)
+                            try:
+                                snapshot = await repo.claim_next(instance_id, limits=policy.limits)
+                            except AppError as error:
+                                if error.code != "daemon_unavailable":
+                                    raise
+                                current = await repo.control()
+                                if (
+                                    str(current.instance_id) == instance_id
+                                    and current.state == "draining"
+                                ):
+                                    control = current
+                                    break
+                                raise
                             if snapshot is None:
                                 break
                             tasks[str(snapshot.id)] = asyncio.create_task(

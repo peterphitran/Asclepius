@@ -2,7 +2,8 @@
 
 Status: implemented for chat contracts and controlled provider execution. Task 7 connects
 the four roles, pinned pack/prompts, and deterministic assertions through persisted daemon
-execution. Live semantic accuracy and the exhaustive recovery matrix remain later gates.
+execution. Task 8 verifies cancellation, process-loss recovery, and linked retry. Live
+semantic accuracy remains a later gate.
 
 ## Roles and handoffs
 
@@ -94,7 +95,11 @@ Export twice and confirm no new target/provider calls.
 
 The [Task 7 record](../verification/evidence/cli-pipeline.json) covers normal execution
 and technical failure through the public CLI, real daemon, verified loopback HTTPS, and
-SQLite. Full interruption/retry acceptance, exports, and live model accuracy remain later gates.
+SQLite. The [Task 8 record](../verification/evidence/cli-recovery.json) adds real process
+termination before dispatch, after target receipt, and after Reporter commit; manual restart
+preserves unknown intents and known evidence without replay. Explicit retry copies the
+saved snapshot under new identities and leaves source rows unchanged. Exports and live
+model accuracy remain later gates.
 
 ## Design guidance
 

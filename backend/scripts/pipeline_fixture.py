@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 from contextlib import closing, contextmanager
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 KEY = "ASCLEPIUS_OFFLINE_FIXTURE_CREDENTIAL"
@@ -21,7 +22,13 @@ LIMITS = {
 }
 
 
-def cli(directory, *arguments, environment=None):
+@dataclass(frozen=True)
+class CliResult:
+    returncode: int
+    payload: dict
+
+
+def cli_result(directory, *arguments, environment=None):
     result = subprocess.run(
         [
             sys.executable,
@@ -37,9 +44,16 @@ def cli(directory, *arguments, environment=None):
         timeout=30,
         env=environment if environment is not None else dict(os.environ, PIPELINE_KEY=KEY),
     )
-    assert result.returncode == 0, result.stdout + result.stderr
     assert KEY not in result.stdout + result.stderr
-    return json.loads(result.stdout)["data"]
+    payload = json.loads(result.stdout)
+    assert payload["ok"] == (result.returncode == 0), result.stdout + result.stderr
+    return CliResult(result.returncode, payload)
+
+
+def cli(directory, *arguments, environment=None):
+    result = cli_result(directory, *arguments, environment=environment)
+    assert result.returncode == 0, result.payload
+    return result.payload["data"]
 
 
 def wait_run(directory, identity, timeout=90):
@@ -53,7 +67,7 @@ def wait_run(directory, identity, timeout=90):
 
 
 class Provider(ThreadingHTTPServer):
-    daemon_threads = True
+    daemon_threads = False
 
     def __init__(self, directory, certificate_dir, *, fault=None, delay=0):
         super().__init__(("127.0.0.1", 0), Handler)
@@ -69,6 +83,8 @@ class Provider(ThreadingHTTPServer):
         self.release = threading.Event()
         self.received = threading.Event()
         self.release.set()
+        self.gates = []
+        self.permitted_disconnects = set()
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(
             certificate_dir / "localhost-cert.pem", certificate_dir / "localhost-key.pem"
@@ -76,7 +92,19 @@ class Provider(ThreadingHTTPServer):
         self.socket = context.wrap_socket(self.socket, server_side=True)
         self.origin = f"https://127.0.0.1:{self.server_port}"
 
-    def respond(self, body):
+    @contextmanager
+    def gate(self, actor, operation_id=None):
+        gate = ResponseGate(actor, operation_id)
+        with self.lock:
+            self.gates.append(gate)
+        try:
+            yield gate
+        finally:
+            gate.release.set()
+            with self.lock:
+                self.gates.remove(gate)
+
+    def respond(self, body, *, on_receipt=None):
         with closing(sqlite3.connect(self.directory / "asclepius.sqlite3")) as connection:
             candidates = connection.execute(
                 "SELECT id,run_id,work_item_id,request_json FROM operations WHERE status='pending'"
@@ -121,7 +149,18 @@ class Provider(ThreadingHTTPServer):
                     "variant": variant,
                 }
             )
+        if on_receipt is not None:
+            on_receipt(operation)
         self.received.set()
+        with self.lock:
+            gates = [
+                g
+                for g in self.gates
+                if g.actor == actor and (g.operation_id is None or g.operation_id == operation)
+            ]
+        for gate in gates:
+            gate.received.set()
+            assert gate.release.wait(25), "Selective response gate deadline expired"
         assert self.release.wait(20)
         time.sleep(self.delay)
         if (
@@ -202,30 +241,52 @@ class Provider(ThreadingHTTPServer):
         return json.dumps(output), "stop"
 
 
+@dataclass
+class ResponseGate:
+    actor: str
+    operation_id: str | None = None
+
+    def __post_init__(self):
+        self.received = threading.Event()
+        self.release = threading.Event()
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def record_operation(self, operation_id):
+        self.operation_id = operation_id
+
     def do_POST(self):
+        self.operation_id = None
         with self.server.lock:
             self.server.active += 1
             self.server.max_active = max(self.server.max_active, self.server.active)
         try:
-            assert self.headers.get("Authorization") == "Bearer " + KEY
-            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            status, reply = self.server.respond(body)
-        except Exception as error:
-            self.server.failures.append(str(error))
-            status, reply = 500, {"error": "fixture invariant failed"}
+            try:
+                assert self.headers.get("Authorization") == "Bearer " + KEY
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                status, reply = self.server.respond(body, on_receipt=self.record_operation)
+            except Exception as error:
+                self.server.failures.append(str(error))
+                status, reply = 500, {"error": "fixture invariant failed"}
+            data = json.dumps(reply).encode()
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError, ssl.SSLEOFError) as error:
+                with self.server.lock:
+                    if self.operation_id not in self.server.permitted_disconnects:
+                        self.server.failures.append(
+                            f"Unexpected peer disconnect for {self.operation_id}: {error}"
+                        )
         finally:
             with self.server.lock:
                 self.server.active -= 1
-        data = json.dumps(reply).encode()
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
 
 
 @contextmanager
@@ -239,6 +300,8 @@ def provider(directory, certificate_dir, **options):
         yield server
     finally:
         server.release.set()
+        for gate in server.gates:
+            gate.release.set()
         server.shutdown()
         server.server_close()
         thread.join(5)

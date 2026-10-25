@@ -9,9 +9,9 @@ Identify the checkout and whether it contains local edits. Use an isolated fixtu
 disposable database/data directory, and instances you create for the check. Follow
 [development setup](development.md) for the current API.
 
-The CLI entry point now provides help and configuration validation. The mapped evaluation
-journeys remain future acceptance paths, not runnable instructions. Do not fabricate
-commands to mark them passed.
+The CLI supports configuration, management, execution, cancellation, and manual recovery.
+Recorded checkpoints below distinguish verified journeys from remaining acceptance paths.
+Do not fabricate commands to mark unimplemented comparisons or exports passed.
 The [backend design](specs/backend-design.md) defines runtime acceptance requirements;
 the [pipeline design](specs/evaluation-pipeline.md) defines the agent-specific checks.
 The [RAG design](specs/rag-testing.md) adds capability-specific fixture, indexing,
@@ -166,6 +166,34 @@ and HTTP/invalid-proposal failures. It asserts an installed import, stops owned 
 and removes temporary stores. Exact final platform results, hashes, reviewer responses,
 and proof output are retained in the record. Live Groq behavior, semantic accuracy, full
 crash/cancellation acceptance, comparisons, and exports remain later gates.
+
+## Recorded cancellation and crash recovery
+
+The [Task 8 record](verification/evidence/cli-recovery.json) covers queued cancellation
+without calls, issued reply preservation, cancellation while rate-limited, active drain,
+stop timeout ownership, durable submission racing drain, and OS watcher interruption
+without cancellation. Process termination is checked before dispatch, after validated target
+receipt, and after a committed Reporter finding. Manual restart interrupts old work,
+retains original uncertain request payloads and known evidence, and executes queued work.
+Explicit retry uses the saved snapshot under new run/variant/operation IDs and leaves
+all original source rows unchanged. Stale-owner append/overwrite checks supplement the
+public process scenarios. Each lifecycle scenario pins one broad-pack check with three
+attacks and one fixed control; Task 7 remains the full 80-case execution proof.
+
+Final full suites passed 354 WSL tests and 353 native Windows tests with
+one existing WSL-only skip. Ruff passed. The legacy Starlette HTTPX warning remains.
+A reproduced ready-read/drain/claim race now exits cleanly after confirming same-generation
+drain; unrelated admission/storage errors still propagate. Review strengthened reply-content
+and uncertain-intent preservation checks; raw RED/GREEN results and full review reports
+are retained in the record.
+
+`backend/scripts/verify_recovery.py` passed against both final installed wheels outside
+the checkout. It shares the real scenario functions, asserts intended installed imports,
+and records run identities, unknown operations, reply counts, watcher OS-event results,
+and cleanup. Windows uses a dedicated watcher console guarded by exact process membership;
+WSL sends SIGINT to its watcher. Loopback HTTPS responses remain deterministic. Hosted Groq,
+semantic accuracy, physical keyboard/terminal close, sleep/shutdown, comparisons and exports
+remain later gates.
 
 ## Feature-map convention
 
