@@ -1,7 +1,7 @@
 # Development
 
 See [status](status.md) for current implementation boundaries. Profile management, manual
-daemon control, and persisted run inspection work. Evaluation execution is not available yet.
+daemon control, and persisted run inspection work. Queued evaluations execute through the coordinator.
 Configuration validation
 works without a daemon, API server, or database service.
 
@@ -65,6 +65,21 @@ contains 20 checks across five families. Generation produces three attacks and o
 benign control per check, for 80 cases. This count describes the pinned coverage; it does
 not establish model judgment accuracy.
 
+## Installed execution proof
+
+Build and install the final wheel into a separate environment, then run outside the
+checkout using absolute paths:
+
+```text
+python <checkout>/backend/scripts/verify_pipeline.py --certificates <checkout>/backend/tests/cli/fixtures
+```
+
+The driver asserts a `site-packages` import. It starts real detached daemons and uses
+verified loopback HTTPS, SQLite, and deterministic provider replies. Its sibling
+`pipeline_fixture.py` must remain beside it. It checks two concurrent full-pack runs and
+technical failure paths, stops its daemons, and removes its temporary stores. It does
+not contact hosted models or establish semantic judgment accuracy.
+
 ## Manage local profiles and inspect history
 
 From `backend/`, choose a separate local data directory for each operating system:
@@ -93,7 +108,7 @@ continue. The default page size is 50 and the maximum is 500. Ordering is ascend
 not newest first. `runs list --profile <profile-id>` also works for removed profiles.
 Reads work while stopped. Watch prints persisted events and a terminal state, or exits 130
 on keyboard interruption without cancelling the run. Active cancellation records a request;
-the future coordinator must honor it before dispatching more work.
+the coordinator checks it before dispatching more work.
 
 ## Submit a complete plan
 
@@ -102,8 +117,9 @@ draining, or stale readiness returns exit 4 without inserting a run. A hard cras
 that record fresh for up to ten seconds, during which queued acceptance can still succeed.
 That work waits for a manual restart; submission is not a synchronous OS-liveness guarantee.
 Do not modify the database to manufacture readiness.
-The current daemon accepts queued work but deliberately does not claim or execute it.
-Its status reports `execution_available: false` until the coordinator is implemented.
+The daemon claims accepted work within runtime and pinned active-run bounds. Its status
+reports execution capability for the actual owning generation. Starting the daemon remains
+explicit; submission does not launch it.
 
 The submission interface accepts complete checks and four role prompts from a bounded,
 versioned JSON file. The [custom example](../backend/examples/submission-plan.json) is synthetic
@@ -122,7 +138,8 @@ environment. Execution must resolve references again. Built-in `--pack broad-cha
 pins the bundled checks and four role prompts through the same service as `--plan`.
 Legacy custom plans still read and queue. The new role runner requires exactly three
 strategies per check; the earlier one-strategy custom example demonstrates submission only.
-Successful submission means queued acceptance, not completed evaluation. Retry requires a
+Successful submission acknowledges background acceptance. Inspect `runs show` or `runs watch`
+for the current state and persisted phases/counts. Retry requires a
 failed, cancelled, or interrupted source and an active original profile. It creates a new ID
 linked to the source and preserves the saved configuration, checks, prompts, and limits.
 It can incur new requests and is not exact replay.
@@ -134,6 +151,28 @@ asclepius --data-dir <local-directory> daemon start --json
 asclepius --data-dir <local-directory> daemon status --json
 asclepius --data-dir <local-directory> daemon stop --timeout 15 --json
 ```
+
+An optional strict policy file configures the daemon instance:
+
+```text
+asclepius --data-dir <local-directory> daemon start --config <daemon.toml> --json
+```
+
+```toml
+ca_bundle = "/absolute/path/to/private-ca.pem"
+[limits]
+active_runs = 2
+requests_per_minute = 60
+```
+
+The CA bundle is optional and adds trust while preserving certificate and hostname
+verification. Relative CA paths resolve beside the policy file. Policy is frozen at startup;
+changing it requires stopping and starting the daemon. Active-run admission honors both
+runtime and pinned profile caps; set both to two when permitting two active runs.
+Concurrency and rate state is shared across runs and
+aliases. Runtime call, completion-token, and deadline limits are ceilings on each pinned
+run, rather than a lifetime daemon spending quota. Submission-client credentials do not
+supply keys to an already-running daemon; configure its environment before starting it.
 
 Start is always explicit. The child detaches with redirected streams; duplicate starts
 identify the existing owner. Status reports persisted identity/PID, OS ownership, heartbeat
@@ -157,7 +196,7 @@ belongs under Linux storage such as `/tmp`, not the Windows checkout.
 
 ## Upgrade existing local storage
 
-New stores use SQLite schema version 2. Existing version-1 stores require an explicit,
+New stores use SQLite schema version 3. Existing version-1 and version-2 stores require an explicit,
 stopped upgrade before reads or daemon start:
 
 ```text
@@ -170,9 +209,8 @@ an existing store, and ordinary commands do not migrate implicitly. JSON output 
 still use schema version 1; that is separate from the SQLite schema version.
 
 The shared `BudgetManager` has tested global, kind, destination, grouping, origin, and
-credential-reference gates plus durable call/completion reservations. It is not yet connected
-to daemon execution. Task 5 provider components use it, and Task 7 must share one manager
-across all workers. Cleanup operations remain unsupported until a separate budget contract
+credential-reference gates plus durable call/completion reservations. It is connected
+to daemon execution through one shared manager across all runs. Cleanup operations remain unsupported until a separate budget contract
 exists. Cancellation while waiting for a slot releases unused allowance. Dispatched calls
 and uncertain authorization outcomes retain their reservations.
 

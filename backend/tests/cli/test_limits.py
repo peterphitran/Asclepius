@@ -289,3 +289,40 @@ def test_cleanup_reservations_are_explicitly_unsupported_not_charged_to_evaluati
         assert reservation.kind == "target"
 
     run(scenario())
+
+
+@pytest.mark.parametrize(
+    "runtime", [{"total_calls": 1}, {"target_calls": 1}, {"completion_tokens": 20}]
+)
+def test_runtime_policy_caps_each_run_allowance_in_storage(tmp_path, runtime):
+    async def scenario():
+        repo, snapshot, _ = await prepare(tmp_path)
+        manager = BudgetManager(repo, OWNER, limits=Limits(**runtime))
+        reservation = await manager.reserve(str(snapshot.id), "target", 20)
+        await manager.dispatch(reservation)
+        await manager.settle(reservation)
+        with pytest.raises(AppError) as error:
+            await manager.reserve(str(snapshot.id), "target", 20)
+        assert error.value.code == "budget_exhausted"
+
+    asyncio.run(scenario())
+
+
+def test_runtime_deadline_is_checked_before_dispatch_authorization(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    async def scenario():
+        repo, snapshot, _ = await prepare(tmp_path)
+        manager = BudgetManager(repo, OWNER, limits=Limits(run_timeout_seconds=1))
+        reservation = await manager.reserve(str(snapshot.id), "target", 20)
+        with sqlite3.connect(repo.database_path) as connection:
+            connection.execute(
+                "UPDATE runs SET started_at=?",
+                ((datetime.now(UTC) - timedelta(seconds=2)).isoformat(),),
+            )
+        with pytest.raises(AppError) as error:
+            await manager.dispatch(reservation)
+        assert error.value.code == "run_timeout"
+        await manager.release(reservation)
+
+    asyncio.run(scenario())

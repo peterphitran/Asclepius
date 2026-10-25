@@ -23,7 +23,7 @@ def test_detached_start_duplicate_stop_and_stopped_reads(tmp_path):
         assert started.state == "ready"
         assert started.owned and started.responsive
         assert started.pid != os.getpid()
-        assert started.execution_available is False
+        assert started.execution_available is True
         repeated = start_daemon(tmp_path)
         assert repeated.instance_id == started.instance_id
         assert repeated.pid == started.pid
@@ -49,7 +49,7 @@ def test_stale_ready_pid_cannot_impersonate_child_startup(tmp_path):
         stop_daemon(tmp_path, timeout=5)
 
 
-def test_daemon_accepts_queue_without_claiming_and_leaves_it_on_stop(tmp_path):
+def test_daemon_fails_legacy_plan_before_network(tmp_path):
     from asclepius.domain import ProfileConfig, TargetConfig
 
     repo = Repository(tmp_path)
@@ -60,37 +60,45 @@ def test_daemon_accepts_queue_without_claiming_and_leaves_it_on_stop(tmp_path):
     snapshot = make_snapshot(profile_id, profile)
     try:
         assert run(repo.enqueue(snapshot)) == str(snapshot.id)
-        time.sleep(0.6)
-        assert run(repo.read_run(str(snapshot.id))).state == RunState.QUEUED
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            view = run(repo.read_run(str(snapshot.id)))
+            if view.state != RunState.QUEUED and view.state != RunState.RUNNING:
+                break
+            time.sleep(0.05)
+        assert view.state == RunState.FAILED
+        assert view.reason == "plan_not_executable"
+        assert view.observations == ()
     finally:
         stop_daemon(tmp_path, timeout=5)
-    assert run(repo.read_run(str(snapshot.id))).state == RunState.QUEUED
+    assert run(repo.read_run(str(snapshot.id))).state == RunState.FAILED
     assert str(started.instance_id)
 
 
 def test_stop_timeout_reports_draining_without_killing_active_owner(tmp_path):
-    from asclepius.domain import ProfileConfig, TargetConfig
+    from pathlib import Path
 
-    repo = Repository(tmp_path)
-    run(repo.initialize())
-    started = start_daemon(tmp_path)
-    instance = str(started.instance_id)
-    profile = ProfileConfig(target=TargetConfig(name="test", model="test", secret_ref="env:KEY"))
-    profile_id = run(repo.save_profile(profile))
-    snapshot = make_snapshot(profile_id, profile)
-    try:
-        run(repo.enqueue(snapshot))
-        assert run(repo.claim_next(instance)).id == snapshot.id
-        with pytest.raises(AppError) as error:
-            stop_daemon(tmp_path, timeout=0.2)
-        assert error.value.code == "daemon_draining"
-        status = daemon_status(tmp_path)
-        assert status.state == "draining" and status.owned and status.responsive
-        with pytest.raises(AppError):
-            run(repo.enqueue(snapshot.model_copy(update={"id": uuid4()})))
-        run(repo.finalize(str(snapshot.id), RunState.CANCELLED, "test", instance_id=instance))
-    finally:
-        stop_daemon(tmp_path, timeout=5)
+    from scripts.pipeline_fixture import cli, configure, provider, wait_run
+
+    certificates = Path(__file__).parent / "fixtures"
+    with provider(tmp_path / "store", certificates, fault="invalid") as server:
+        directory, evaluator, _, _ = configure(tmp_path, server, certificates)
+        server.release.clear()
+        try:
+            accepted = cli(
+                directory, "run", "fixture", "--pack", "broad-chat-v1", "--evaluator", evaluator
+            )
+            assert server.received.wait(15)
+            with pytest.raises(AppError) as error:
+                stop_daemon(directory, timeout=0.2)
+            assert error.value.code == "daemon_draining"
+            status = daemon_status(directory)
+            assert status.state == "draining" and status.owned and status.responsive
+            server.release.set()
+            assert wait_run(directory, accepted["id"])["state"] == "failed"
+        finally:
+            server.release.set()
+            stop_daemon(directory, timeout=10)
 
 
 def test_cli_parent_exit_does_not_stop_the_detached_child(tmp_path):

@@ -36,11 +36,13 @@ class BudgetManager:
 
     async def reserve(self, run_id: str, kind: str, max_output: int) -> BudgetReservation:
         reservation = BudgetReservation(run_id=run_id, kind=kind, max_output=max_output)
-        await self.repo.reserve_budget(reservation, self.instance_id)
+        await self.repo.reserve_budget(reservation, self.instance_id, runtime_limits=self.limits)
         return reservation
 
     async def dispatch(self, reservation: BudgetReservation) -> None:
-        await self.repo.change_reservation(reservation, "dispatched", self.instance_id)
+        await self.repo.change_reservation(
+            reservation, "dispatched", self.instance_id, runtime_limits=self.limits
+        )
 
     async def settle(self, reservation: BudgetReservation) -> None:
         await self.repo.change_reservation(reservation, "settled", self.instance_id)
@@ -48,14 +50,16 @@ class BudgetManager:
     async def release(self, reservation: BudgetReservation) -> None:
         await self.repo.change_reservation(reservation, "released", self.instance_id)
 
-    async def _checkpoint(self, snapshot: RunSnapshot) -> None:
-        await self.repo.execution_checkpoint(str(snapshot.id), self.instance_id)
+    async def checkpoint(self, snapshot: RunSnapshot) -> None:
+        await self.repo.execution_checkpoint(
+            str(snapshot.id), self.instance_id, runtime_limits=self.limits
+        )
 
     @asynccontextmanager
     async def _gate(self, key: str, limit: int, snapshot: RunSnapshot):
         leases = self._leases[key]
         while True:
-            await self._checkpoint(snapshot)
+            await self.checkpoint(snapshot)
             if len(leases) < min([limit, *leases]):
                 leases.append(limit)
                 break
@@ -112,7 +116,7 @@ class BudgetManager:
                 rate_keys.append(f"account:{secret_ref}")
             cap = min(self.limits.requests_per_minute, pinned.requests_per_minute)
             while True:
-                await self._checkpoint(snapshot)
+                await self.checkpoint(snapshot)
                 now = time.monotonic()
                 for key in rate_keys:
                     while self._rate[key] and self._rate[key][0] <= now - 60:
@@ -122,5 +126,5 @@ class BudgetManager:
                         self._rate[key].append(now)
                     break
                 await asyncio.sleep(0.05)
-            await self._checkpoint(snapshot)
+            await self.checkpoint(snapshot)
             yield

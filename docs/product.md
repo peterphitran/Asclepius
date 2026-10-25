@@ -49,7 +49,7 @@ not identify a source folder or automatically start its target application.
 
 The following commands illustrate the agreed full interaction. Profile management and
 persisted inspection, manual daemon control, a built-in check pack, and four typed agent
-roles exist. Queued evaluation execution and reports remain pending.
+roles and persisted queued execution exist. Report export remains pending.
 See [development](development.md) for implemented syntax and limitations.
 
 ```text

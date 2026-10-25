@@ -121,3 +121,38 @@ def test_configuration_read_is_bounded() -> None:
     with pytest.raises(AppError) as error:
         load_target(OversizedPath())
     assert error.value.code == "config_size"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "unexpected = true",
+        "[limits]\nactive_runs = 0",
+        'ca_bundle = "missing.pem"',
+        '[limits]\ncompletion_tokens = "100"',
+    ],
+)
+def test_daemon_policy_rejects_unknown_invalid_or_untrusted_configuration(tmp_path, text):
+    from asclepius.config import load_daemon
+
+    path = tmp_path / "daemon.toml"
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(AppError) as caught:
+        load_daemon(path)
+    assert caught.value.code == "daemon_config"
+
+
+def test_daemon_policy_resolves_relative_ca_and_pins_limits(tmp_path):
+    import shutil
+    from pathlib import Path
+
+    from asclepius.config import load_daemon
+
+    shutil.copyfile(Path(__file__).parent / "fixtures" / "localhost-cert.pem", tmp_path / "ca.pem")
+    path = tmp_path / "daemon.toml"
+    path.write_text(
+        'ca_bundle = "ca.pem"\n[limits]\nactive_runs = 2\ntotal_calls = 50', encoding="utf-8"
+    )
+    policy = load_daemon(path)
+    assert policy.ca_bundle == str((tmp_path / "ca.pem").resolve())
+    assert policy.limits.active_runs == 2 and policy.limits.total_calls == 50

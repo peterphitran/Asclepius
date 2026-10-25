@@ -1,10 +1,18 @@
 import os
+import ssl
 import tomllib
 from pathlib import Path
 
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
-from asclepius.domain import AppError, EvaluatorConfig, ProfileConfig, SubmissionPlan
+from asclepius.domain import (
+    AppError,
+    Contract,
+    EvaluatorConfig,
+    Limits,
+    ProfileConfig,
+    SubmissionPlan,
+)
 from asclepius.paths import local_directory
 
 
@@ -60,3 +68,24 @@ def data_directory(override: Path | None = None) -> Path:
         return local_directory(base / "Asclepius")
     base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
     return local_directory(base / "asclepius")
+
+
+class DaemonConfig(Contract):
+    limits: Limits = Field(default_factory=Limits)
+    ca_bundle: str | None = None
+
+
+def load_daemon(path: Path | None = None) -> DaemonConfig:
+    try:
+        config = DaemonConfig.model_validate(_read(path) if path else {})
+        if config.ca_bundle is not None:
+            bundle = Path(config.ca_bundle)
+            if not bundle.is_absolute():
+                bundle = path.parent / bundle
+            bundle = bundle.resolve(strict=True)
+            context = ssl.create_default_context()
+            context.load_verify_locations(cafile=str(bundle))
+            config = config.model_copy(update={"ca_bundle": str(bundle)})
+        return config
+    except (ValidationError, OSError, ValueError, ssl.SSLError):
+        raise AppError("daemon_config", "Invalid daemon policy or CA bundle.", 2) from None

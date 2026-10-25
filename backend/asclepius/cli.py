@@ -68,7 +68,10 @@ def parser() -> argparse.ArgumentParser:
     daemon = commands.add_parser("daemon", help="Manually control the detached queue daemon.")
     daemon_actions = daemon.add_subparsers(dest="action", required=True)
     for name in ("start", "stop"):
-        daemon_actions.add_parser(name).add_argument("--timeout", type=float, default=15)
+        action = daemon_actions.add_parser(name)
+        action.add_argument("--timeout", type=float, default=15)
+        if name == "start":
+            action.add_argument("--config", type=Path)
     daemon_actions.add_parser("status")
     storage = commands.add_parser("storage", help="Explicit stopped-store maintenance.")
     storage.add_subparsers(dest="action", required=True).add_parser("migrate")
@@ -116,7 +119,12 @@ async def dispatch(options, json_output: bool) -> None:
                     "arguments", "Daemon wait timeout must be positive and at most 60 seconds.", 2
                 )
             operation = start_daemon if options.action == "start" else stop_daemon
-            data = await asyncio.to_thread(operation, repo.data_dir, timeout=options.timeout)
+            data = await asyncio.to_thread(
+                operation,
+                repo.data_dir,
+                timeout=options.timeout,
+                **({"config": options.config} if options.action == "start" else {}),
+            )
     elif command == "targets":
         if options.action == "add":
             config = load_target(options.config)
@@ -143,7 +151,7 @@ async def dispatch(options, json_output: bool) -> None:
         identity = await service.submit(
             options.profile, load_evaluator(options.evaluator), plan.checks, prompts=plan.prompts
         )
-        data = {"id": identity, "state": "queued", "meaning": "Accepted, not executed."}
+        data = {"id": identity, "state": "queued", "meaning": "Accepted for background execution."}
     elif command == "checks":
         data = [check.model_dump(mode="json") for check in load_pack(options.pack)]
     elif command == "runs":

@@ -63,6 +63,15 @@ class _Reply(_WireModel):
     usage: _Usage | None = None
 
 
+class DispatchFailure(AppError):
+    def __init__(
+        self, code: str, observation: Observation, *, settlement_failed: bool = False
+    ) -> None:
+        super().__init__(code, "Provider dispatch could not complete durably.")
+        self.observation = observation
+        self.settlement_failed = settlement_failed
+
+
 class GroqConnection:
     def __init__(
         self,
@@ -176,28 +185,41 @@ class GroqConnection:
             )
         )
 
+    def validate_credentials(self) -> None:
+        for actor in ("target", *sorted(ROLES)):
+            config = self._config(actor)
+            secret = self._secrets.get(config.secret_ref)
+            if not secret:
+                raise AppError("secret_missing", "Selected provider credential is unavailable.", 2)
+            if any(ord(char) < 33 or ord(char) > 126 for char in secret):
+                raise AppError("secret_invalid", "Selected provider credential is invalid.", 2)
+
     async def execute(self, call: PreparedCall) -> Observation:
         request = call.request
         if request.run_id != self.snapshot.id:
             raise AppError("operation_identity", "Operation belongs to another run.", 2)
         config = self._config(request.actor)
-        secret = self._secrets.get(config.secret_ref)
-        if not secret:
-            raise AppError("secret_missing", "Selected provider credential is unavailable.", 2)
-        if any(ord(char) < 33 or ord(char) > 126 for char in secret):
-            raise AppError("secret_invalid", "Selected provider credential is invalid.", 2)
-        body = json.loads(call.body_json)
-        kind = "target" if request.actor == "target" else "evaluator"
-        role = None if kind == "target" else request.actor
-        pinned = self.snapshot.profile.limits
-        deadline = min(pinned.request_timeout_seconds, self.budgets.limits.request_timeout_seconds)
-        cap = min(pinned.response_bytes, self.budgets.limits.response_bytes)
-        reservation = await self.budgets.reserve(
-            str(request.run_id), kind, config.max_completion_tokens
-        )
-        phase: Literal["reserved", "authorizing", "dispatched"] = "reserved"
         started = datetime.now(UTC)
+        phase: Literal["reserved", "authorizing", "dispatched"] = "reserved"
+        reservation = None
+        observation = None
         try:
+            secret = self._secrets.get(config.secret_ref)
+            if not secret:
+                raise AppError("secret_missing", "Selected provider credential is unavailable.", 2)
+            if any(ord(char) < 33 or ord(char) > 126 for char in secret):
+                raise AppError("secret_invalid", "Selected provider credential is invalid.", 2)
+            body = json.loads(call.body_json)
+            kind = "target" if request.actor == "target" else "evaluator"
+            role = None if kind == "target" else request.actor
+            pinned = self.snapshot.profile.limits
+            deadline = min(
+                pinned.request_timeout_seconds, self.budgets.limits.request_timeout_seconds
+            )
+            cap = min(pinned.response_bytes, self.budgets.limits.response_bytes)
+            reservation = await self.budgets.reserve(
+                str(request.run_id), kind, config.max_completion_tokens
+            )
             async with self.budgets.slot(self.snapshot, kind, role=role):
                 phase = "authorizing"
                 await self.budgets.dispatch(reservation)
@@ -211,33 +233,51 @@ class GroqConnection:
                         response_bytes=cap,
                     )
                     payload, truncated = self._parse(data)
-                    return self._observation(request, started, payload=payload, truncated=truncated)
+                    observation = self._observation(
+                        request, started, payload=payload, truncated=truncated
+                    )
                 except AppError as error:
-                    unknown = error.code in {"provider_timeout", "provider_connection"}
                     retry_after = (
                         error.retry_after if isinstance(error, ProviderHttpError) else None
                     )
                     if retry_after is not None and self.redact(retry_after) != retry_after:
                         retry_after = None
-                    return self._observation(
+                    observation = self._observation(
                         request,
                         started,
                         error_code=error.code,
                         retry_after=retry_after,
-                        unknown=unknown,
+                        unknown=error.code in {"provider_timeout", "provider_connection"},
                         truncated=error.code == "response_too_large",
                     )
+            await self.budgets.settle(reservation)
+            return observation
         except asyncio.CancelledError:
-            if phase == "reserved":
-                await self.budgets.release(reservation)
+            if reservation is not None:
+                if phase == "reserved":
+                    await self.budgets.release(reservation)
+                elif phase == "dispatched":
+                    await self.budgets.settle(reservation)
             raise
-        except AppError:
-            if phase != "dispatched":
-                await self.budgets.release(reservation)
-            raise
-        finally:
-            if phase == "dispatched":
-                await self.budgets.settle(reservation)
+        except AppError as dispatch_error:
+            code = dispatch_error.code
+            settlement_failed = phase == "dispatched" and observation is not None
+            if reservation is not None and phase != "dispatched":
+                try:
+                    await self.budgets.release(reservation)
+                except AppError as cleanup_error:
+                    settlement_failed = True
+                    code = cleanup_error.code
+            if observation is None:
+                observation = self._observation(
+                    request, started, error_code=code, unknown=phase != "reserved"
+                )
+                observation = observation.model_copy(
+                    update={
+                        "dispatch_status": "not_dispatched" if phase == "reserved" else "unknown"
+                    }
+                )
+            raise DispatchFailure(code, observation, settlement_failed=settlement_failed) from None
 
     def _parse(self, data: dict) -> tuple[ChatOutput, bool]:
         try:
@@ -302,6 +342,7 @@ class GroqConnection:
             retry_after=retry_after,
             truncated=truncated,
             request_payload=request.payload,
+            dispatch_status="attempted",
         )
 
 

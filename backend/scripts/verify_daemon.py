@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 from pathlib import Path
 
@@ -61,7 +62,7 @@ def main() -> None:
         started = command("daemon", "start")
         try:
             assert started["owned"] and started["responsive"]
-            assert started["execution_available"] is False
+            assert started["execution_available"] is True
             assert command("daemon", "start")["instance_id"] == started["instance_id"]
             accepted = command(
                 "run",
@@ -72,15 +73,21 @@ def main() -> None:
                 str(evaluator_path),
             )
             assert accepted["state"] == "queued"
-            assert command("runs", "show", accepted["id"])["state"] == "queued"
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                view = command("runs", "show", accepted["id"])
+                if view["state"] not in {"queued", "running"}:
+                    break
+                time.sleep(0.1)
+            assert view["state"] == "failed" and view["reason"] == "plan_not_executable"
+            assert view["observations"] == []
         finally:
             assert command("daemon", "stop")["owned"] is False
             wait_for_windows_exit(started["pid"])
-        assert command("runs", "show", accepted["id"])["state"] == "queued"
-        assert command("runs", "cancel", accepted["id"])["state"] == "cancelled"
+        assert command("runs", "show", accepted["id"])["state"] == "failed"
     print(
         "Installed daemon CLI probe passed: ownership, duplicate start, queued submission, "
-        "stop, and stopped reads. No evaluation execution."
+        "legacy-plan preflight failure, stop, and stopped reads. No provider requests."
     )
 
 

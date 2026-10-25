@@ -535,24 +535,79 @@ and affected CLI tests. Installed-wheel checks must read the actual bundled reso
 **Interfaces:** async `Coordinator(repo: Repository, agents: AgentRunner, adapter: ChatAdapter, budgets: BudgetManager).execute(snapshot: RunSnapshot) -> None`.
 Daemon schedules claimed snapshots through this interface, never directly invokes model roles.
 
-- [ ] Write integration tests with actual CLI subprocesses, daemon, SQLite, and loopback
+- [x] Write integration tests with actual CLI subprocesses, daemon, SQLite, and loopback
   target/provider fixtures: requested 80 cases execute with correct IDs/versions, four roles
   have distinct records, and pass/weakness/inconclusive/provider error remain distinguishable.
   Assert no RAG fields required and stop new work on unrecoverable technical error.
-- [ ] Test profile/check edits after submission do not change the accepted snapshot. Remove a
+- [x] Test profile/check edits after submission do not change the accepted snapshot. Remove a
   daemon credential before dispatch; assert failed run, no alternate identity, no target call.
   Submit using two aliases and configurable two active runs; assert global/resource bounds.
-- [ ] Run `python -m pytest tests/cli/test_pipeline.py tests/cli/test_multi_client.py -q`; expect failures.
-- [ ] Implement persisted selection, generated inputs, intent-before-network, observation,
+- [x] Run `python -m pytest tests/cli/test_pipeline.py tests/cli/test_multi_client.py -q`; expect failures.
+- [x] Implement persisted selection, generated inputs, intent-before-network, observation,
   judgment, finding, and phase counts/events. Before variants exist show phases/counts,
   not a misleading fixed total percentage. Commit exact inputs before sending.
   Bound evidence; necessary evidence missing due truncation yields inconclusive.
   Finalize only after in-flight work settles; partial findings survive failure.
   Add pending/failed stage invocation records before model calls. Task 2 commit-only attempts
   record unknown start time as NULL, not a fabricated duration, and do not prove invocation recovery.
-- [ ] Repeat integration tests, inspecting saved SQLite output and fixture request logs;
+- [x] Repeat integration tests, inspecting saved SQLite output and fixture request logs;
   expect matching identities, no duplicated committed stages/findings.
-- [ ] Commit owned changes: `feat: execute queued evaluations end to end`.
+- [x] Commit owned changes: `feat: execute queued evaluations end to end`.
+
+#### Accepted Task 7 implementation shape
+
+Design comparison on 2026-10-23 selected the run session and scoped invocation design.
+Each invocation binds its immutable stage-attempt identity to the existing mandatory
+AgentRunner dispatch callback. The coordinator owns the visible sequential role/target
+loop; the daemon owns bounded run tasks, heartbeat, drain, and one shared BudgetManager.
+The alternative direct run context contributes atomic capacity-aware FIFO admission in
+`claim_next`, so a queued run never starts its deadline while waiting for a run slot.
+There is no second admission lease registry or generic workflow engine.
+
+The public boundary remains `Coordinator.execute(snapshot)`. Its constructor takes the
+repository, shared budgets, and verified transport, then constructs snapshot-bound agents
+and adapter internally. This accepted refinement removes circular callback construction
+from the plan's original preconstructed-agent constructor. AgentRunner's four existing
+method signatures remain unchanged. Public submission stays
+`run <profile> --pack broad-chat-v1 --evaluator <path>`.
+
+Repository stage attempts gain owner-fenced pending/failed/completed transitions. An
+invocation commits its typed output and attempt completion atomically. Historical direct
+stage commits retain NULL start timestamps. Every network call requires a newly created
+exact prepared intent; an existing intent never authorizes a resend. Observations become
+durable before role semantic acceptance. Generation commits exact variants before target
+calls. Finalization rejects pending operations or stage attempts and preserves partial
+findings. Fatal storage/ownership failure stops admission rather than claiming settlement.
+
+Dispatch certainty belongs to the connection boundary. A typed failure retains the real
+observation when one exists. Additive optional observation metadata distinguishes a proven
+local nondispatch failure from attempted or uncertain delivery, without claiming a provider
+reply or rebuilding the operations table. Historical JSON keeps its unknown defaults.
+Cancellation accounting must retain the existing uncertain-authorization behavior.
+
+Daemon startup accepts one strict optional `--config` TOML containing runtime limits and
+an optional CA bundle. Resolve paths and validate trust before readiness, then freeze the
+policy for the instance. A supplied bundle adds trust through a verified SSLContext;
+hostname and certificate checks stay enabled. Runtime limits must have explicit effective
+semantics rather than silently ignored fields. The shared manager constrains all aliases.
+
+Execution capability is persisted for the actual ready daemon generation. An additive
+schema-v3 migration adds a default-false control capability; startup explicitly sets it.
+Existing v1/v2 stores require stopped explicit migration, preserving saved data. This
+narrow migration is accepted to prevent a new CLI from claiming that an older live daemon
+executes runs. Stage attempts and dispatch metadata themselves require no SQL changes.
+
+Progress is derived coherently from persisted rows and phase events, with no fixed total
+until generation completes. Preflight rejects incomplete legacy execution plans before any
+provider call and resolves exact configured credentials from the daemon environment.
+Minimal startup orphan interruption closes pending attempts under exclusive ownership;
+Task 8 retains the exhaustive cancellation/crash/retry acceptance matrix.
+
+Verification uses public CLI subprocesses, a real detached daemon, verified loopback HTTPS,
+and actual SQLite. The fixture replaces only provider responses. It must execute all 80
+target cases, exercise all four roles and distinct verdict/error paths, preserve partial
+results, and demonstrate shared bounds for two concurrent aliases. Installed-wheel proof
+and both platform suites precede the local commit. Live semantic accuracy remains Task 10.
 
 ### Task 8: Cancellation, drain, interruption, and explicit retry
 

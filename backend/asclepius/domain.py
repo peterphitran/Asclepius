@@ -283,6 +283,7 @@ class Observation(Contract):
     retry_after: RetryAfter | None = None
     truncated: bool = False
     request_payload: ChatInput | None = None
+    dispatch_status: Literal["not_dispatched", "attempted", "unknown"] | None = None
 
     @model_validator(mode="after")
     def validate_outcome(self) -> "Observation":
@@ -451,11 +452,36 @@ class BudgetReservation(Contract):
     max_output: PositiveInt
 
 
+class StageAttempt(Contract):
+    run_id: UUID
+    work_item_id: UUID
+    stage: Literal["selector", "generator", "judge", "reporter"]
+    attempt: PositiveInt
+    state: Literal["pending", "completed", "failed"]
+    started_at: UtcTime | None = None
+    finished_at: UtcTime | None = None
+    error_code: str | None = None
+
+
+class RunProgress(Contract):
+    phase: str = "queued"
+    requested_checks: NonNegativeInt = 0
+    generated_checks: NonNegativeInt = 0
+    generated_cases: NonNegativeInt = 0
+    observed_targets: NonNegativeInt = 0
+    judgments: NonNegativeInt = 0
+    findings: NonNegativeInt = 0
+    generation_complete: bool = False
+
+
 class RunView(Contract):
     snapshot: RunSnapshot
     state: RunState
     cancel_requested: bool = False
     reason: str | None = None
+    attempts: tuple[StageAttempt, ...] = ()
+    progress: RunProgress = Field(default_factory=RunProgress)
+    variants: tuple[Variant, ...] = ()
     observations: tuple[Observation, ...] = ()
     judgments: tuple[Judgment, ...] = ()
     findings: tuple[Finding, ...] = ()

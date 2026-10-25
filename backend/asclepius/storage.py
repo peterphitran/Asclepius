@@ -20,18 +20,22 @@ from asclepius.domain import (
     GenerationOutput,
     Judgment,
     JudgmentOutput,
+    Limits,
     Observation,
     OperationIntent,
     OperationRequest,
     Page,
     ProfileConfig,
     ProfileRecord,
+    RunProgress,
     RunSnapshot,
     RunState,
     RunSummary,
     RunView,
     SelectionOutput,
+    StageAttempt,
     StageOutput,
+    Variant,
     allowed_transition,
 )
 from asclepius.maintenance import SCHEMA_VERSION, initialize_storage, maintenance_lock
@@ -219,12 +223,15 @@ class Repository:
 
         return await self._run(action, write=True)
 
-    async def set_ready(self, instance_id: str, *, pid: int | None = None) -> None:
+    async def set_ready(
+        self, instance_id: str, *, pid: int | None = None, execution_available: bool = False
+    ) -> None:
         def action(connection):
             connection.execute(
-                "UPDATE daemon_control SET instance_id=?,state='ready',heartbeat_at=?,pid=? "
+                "UPDATE daemon_control SET instance_id=?,state='ready',heartbeat_at=?,pid=?,"
+                "execution_available=? "
                 "WHERE singleton=1",
-                (instance_id, _now(), pid),
+                (instance_id, _now(), pid, int(execution_available)),
             )
 
         await self._run(action, write=True)
@@ -237,6 +244,7 @@ class Repository:
                 state=row["state"],
                 pid=row["pid"],
                 heartbeat_at=row["heartbeat_at"],
+                execution_available=bool(row["execution_available"]),
             )
 
         return await self._run(action)
@@ -284,7 +292,9 @@ class Repository:
             ).fetchone()[0]
         )
 
-    def _execution(self, connection, run_id: str, instance_id: str) -> sqlite3.Row:
+    def _execution(
+        self, connection, run_id: str, instance_id: str, *, runtime_limits: Limits | None = None
+    ) -> sqlite3.Row:
         row = self._owned(connection, run_id, instance_id)
         if row["cancel_requested"]:
             raise AppError("run_cancelled", "Run cancellation was requested.")
@@ -292,16 +302,33 @@ class Repository:
             raise AppError("budget_exhausted", "Run execution budget is exhausted.")
         snapshot = RunSnapshot.model_validate_json(row["snapshot_json"])
         elapsed = (datetime.now(UTC) - datetime.fromisoformat(row["started_at"])).total_seconds()
-        if elapsed >= snapshot.profile.limits.run_timeout_seconds:
+        deadline = snapshot.profile.limits.run_timeout_seconds
+        if runtime_limits is not None:
+            deadline = min(deadline, runtime_limits.run_timeout_seconds)
+        if elapsed >= deadline:
             raise AppError("run_timeout", "Run execution deadline expired.")
         return row
 
-    async def execution_checkpoint(self, run_id: str, instance_id: str) -> None:
-        await self._run(lambda connection: self._execution(connection, run_id, instance_id)["id"])
+    async def execution_checkpoint(
+        self, run_id: str, instance_id: str, *, runtime_limits: Limits | None = None
+    ) -> None:
+        await self._run(
+            lambda connection: self._execution(
+                connection, run_id, instance_id, runtime_limits=runtime_limits
+            )["id"]
+        )
 
-    async def reserve_budget(self, reservation: BudgetReservation, instance_id: str) -> None:
+    async def reserve_budget(
+        self,
+        reservation: BudgetReservation,
+        instance_id: str,
+        *,
+        runtime_limits: Limits | None = None,
+    ) -> None:
         def action(connection):
-            row = self._execution(connection, str(reservation.run_id), instance_id)
+            row = self._execution(
+                connection, str(reservation.run_id), instance_id, runtime_limits=runtime_limits
+            )
             limits = RunSnapshot.model_validate_json(row["snapshot_json"]).profile.limits
             if reservation.kind == "cleanup":
                 raise AppError(
@@ -312,6 +339,13 @@ class Repository:
                 "FROM budget_reservations WHERE run_id=? AND state<>'released'",
                 (reservation.kind, str(reservation.run_id)),
             ).fetchone()
+            if runtime_limits is not None:
+                limits = Limits(
+                    **{
+                        key: min(value, getattr(runtime_limits, key))
+                        for key, value in limits.model_dump().items()
+                    }
+                )
             cap = limits.target_calls if reservation.kind == "target" else limits.evaluator_calls
             if (
                 counts[0] >= limits.total_calls
@@ -340,7 +374,12 @@ class Repository:
             raise AppError("budget_exhausted", "Run execution budget is exhausted.")
 
     async def change_reservation(
-        self, reservation: BudgetReservation, state: str, instance_id: str
+        self,
+        reservation: BudgetReservation,
+        state: str,
+        instance_id: str,
+        *,
+        runtime_limits: Limits | None = None,
     ) -> None:
         def action(connection):
             self._owned(connection, str(reservation.run_id), instance_id)
@@ -359,7 +398,9 @@ class Repository:
             if state not in prior or row["state"] != prior[state]:
                 raise AppError("conflict", "Budget reservation transition is not allowed.")
             if state == "dispatched":
-                self._execution(connection, str(reservation.run_id), instance_id)
+                self._execution(
+                    connection, str(reservation.run_id), instance_id, runtime_limits=runtime_limits
+                )
             connection.execute(
                 "UPDATE budget_reservations SET state=? WHERE id=?", (state, str(reservation.id))
             )
@@ -393,7 +434,9 @@ class Repository:
 
         return await self._run(action, write=True)
 
-    async def claim_next(self, instance_id: str) -> RunSnapshot | None:
+    async def claim_next(
+        self, instance_id: str, *, limits: Limits | None = None
+    ) -> RunSnapshot | None:
         def action(connection):
             self._ready(connection, instance_id)
             row = connection.execute(
@@ -401,6 +444,21 @@ class Repository:
             ).fetchone()
             if row is None:
                 return None
+            if limits is not None:
+                candidate = RunSnapshot.model_validate_json(row["snapshot_json"])
+                active = connection.execute(
+                    "SELECT snapshot_json FROM runs WHERE state='running'"
+                ).fetchall()
+                cap = min(
+                    limits.active_runs,
+                    candidate.profile.limits.active_runs,
+                    *[
+                        RunSnapshot.model_validate_json(item[0]).profile.limits.active_runs
+                        for item in active
+                    ],
+                )
+                if len(active) >= cap:
+                    return None
             changed = connection.execute(
                 "UPDATE runs SET state='running',owner_id=?,started_at=? "
                 "WHERE id=? AND state='queued'",
@@ -456,6 +514,81 @@ class Repository:
                 raise AppError(
                     "invalid_evidence", "Evidence does not match this work item's observed reply."
                 )
+
+    async def begin_stage(
+        self, run_id: str, work_item_id: str, stage: str, *, instance_id: str
+    ) -> StageAttempt:
+        if stage not in {"selector", "generator", "judge", "reporter"}:
+            raise AppError("invalid_output", "Unknown stage.")
+
+        def action(connection):
+            self._execution(connection, run_id, instance_id)
+            prior = connection.execute(
+                "SELECT 1 FROM stage_attempts WHERE run_id=? AND work_item_id=? AND stage=?",
+                (run_id, work_item_id, stage),
+            ).fetchone()
+            if prior:
+                raise AppError(
+                    "stage_exists", "An invocation already exists; automatic replay is prohibited."
+                )
+            attempt = StageAttempt(
+                run_id=run_id,
+                work_item_id=work_item_id,
+                stage=stage,
+                attempt=1,
+                state="pending",
+                started_at=_now(),
+            )
+            connection.execute(
+                "INSERT INTO stage_attempts VALUES(?,?,?,1,'pending',?,NULL,NULL)",
+                (run_id, work_item_id, stage, attempt.started_at.isoformat()),
+            )
+            self._event(
+                connection,
+                run_id,
+                "stage.started",
+                work_item_id=work_item_id,
+                stage=stage,
+                attempt=1,
+            )
+            return attempt
+
+        return await self._run(action, write=True)
+
+    async def fail_stage(self, attempt: StageAttempt, error_code: str, *, instance_id: str) -> None:
+        def action(connection):
+            self._owned(connection, str(attempt.run_id), instance_id)
+            changed = connection.execute(
+                "UPDATE stage_attempts SET state='failed',finished_at=?,error_code=? "
+                "WHERE run_id=? AND work_item_id=? AND stage=? AND attempt=? AND state='pending'",
+                (
+                    _now(),
+                    error_code,
+                    str(attempt.run_id),
+                    str(attempt.work_item_id),
+                    attempt.stage,
+                    attempt.attempt,
+                ),
+            )
+            if changed.rowcount != 1:
+                raise AppError("conflict", "Stage invocation is no longer pending.")
+            self._event(
+                connection,
+                str(attempt.run_id),
+                "stage.failed",
+                work_item_id=str(attempt.work_item_id),
+                stage=attempt.stage,
+                error_code=error_code,
+            )
+
+        await self._run(action, write=True)
+
+    async def phase(self, run_id: str, phase: str, *, instance_id: str) -> None:
+        def action(connection):
+            self._owned(connection, run_id, instance_id)
+            self._event(connection, run_id, "run.phase", phase=phase)
+
+        await self._run(action, write=True)
 
     async def commit_stage(
         self, run_id: str, work_item_id: str, stage: str, output: StageOutput, *, instance_id: str
@@ -556,10 +689,24 @@ class Repository:
                 "INSERT INTO stages VALUES(?,?,?,?,?)",
                 (run_id, work_item_id, stage, _json(output), timestamp),
             )
-            connection.execute(
-                "INSERT INTO stage_attempts VALUES(?,?,?,1,'completed',NULL,?,NULL)",
-                (run_id, work_item_id, stage, timestamp),
-            )
+            pending = connection.execute(
+                "SELECT state FROM stage_attempts WHERE run_id=? AND work_item_id=? "
+                "AND stage=? AND attempt=1",
+                (run_id, work_item_id, stage),
+            ).fetchone()
+            if pending is None:
+                connection.execute(
+                    "INSERT INTO stage_attempts VALUES(?,?,?,1,'completed',NULL,?,NULL)",
+                    (run_id, work_item_id, stage, timestamp),
+                )
+            elif pending[0] == "pending":
+                connection.execute(
+                    "UPDATE stage_attempts SET state='completed',finished_at=? "
+                    "WHERE run_id=? AND work_item_id=? AND stage=? AND attempt=1",
+                    (timestamp, run_id, work_item_id, stage),
+                )
+            else:
+                raise AppError("conflict", "A failed invocation cannot commit output.")
             self._event(
                 connection, run_id, "stage.completed", work_item_id=work_item_id, stage=stage
             )
@@ -643,6 +790,10 @@ class Repository:
                 or (
                     request.work_item_id != observation.work_item_id
                     or request.actor != observation.actor
+                    or (
+                        request.provider_body_json is not None
+                        and observation.request_payload != request.payload
+                    )
                 )
             ):
                 raise AppError("invalid_output", "Observation does not match its operation.")
@@ -680,14 +831,56 @@ class Repository:
                 )
             )
 
+        snapshot = RunSnapshot.model_validate_json(row["snapshot_json"])
+        variants = tuple(
+            Variant.model_validate_json(item[0])
+            for item in connection.execute(
+                "SELECT variant_json FROM work_items WHERE run_id=? "
+                "AND variant_json IS NOT NULL ORDER BY rowid",
+                (row["id"],),
+            )
+        )
+        attempts = tuple(
+            StageAttempt(**dict(item))
+            for item in connection.execute(
+                "SELECT * FROM stage_attempts WHERE run_id=? ORDER BY rowid", (row["id"],)
+            )
+        )
+        observations = documents("observations", Observation)
+        judgments = documents("judgments", Judgment)
+        findings = documents("findings", Finding)
+        phase = connection.execute(
+            "SELECT json_extract(data_json,'$.phase') FROM events WHERE run_id=? "
+            "AND kind='run.phase' ORDER BY sequence DESC LIMIT 1",
+            (row["id"],),
+        ).fetchone()
+        generated = sum(
+            item.stage == "generator" and item.state == "completed" for item in attempts
+        )
         return RunView(
-            snapshot=RunSnapshot.model_validate_json(row["snapshot_json"]),
+            snapshot=snapshot,
+            attempts=attempts,
+            variants=variants,
+            progress=RunProgress(
+                phase="finished"
+                if row["state"] not in {"queued", "running"}
+                else phase[0]
+                if phase
+                else row["state"],
+                requested_checks=len(snapshot.checks),
+                generated_checks=generated,
+                generated_cases=len(variants),
+                observed_targets=sum(item.actor == "target" for item in observations),
+                judgments=len(judgments),
+                findings=len(findings),
+                generation_complete=generated == len(snapshot.checks),
+            ),
             state=row["state"],
             cancel_requested=bool(row["cancel_requested"]),
             reason=row["reason"],
-            observations=documents("observations", Observation),
-            judgments=documents("judgments", Judgment),
-            findings=documents("findings", Finding),
+            observations=observations,
+            judgments=judgments,
+            findings=findings,
         )
 
     async def read_run(self, run_id: str) -> RunView:
@@ -865,6 +1058,12 @@ class Repository:
                 "SELECT 1 FROM operations WHERE run_id=? AND status='pending'", (run_id,)
             ).fetchone():
                 raise AppError("inflight", "Settle pending operations before finalizing this run.")
+            if connection.execute(
+                "SELECT 1 FROM stage_attempts WHERE run_id=? AND state='pending'", (run_id,)
+            ).fetchone():
+                raise AppError("pending_stage", "Close pending stage attempts before finalization.")
+            if state == RunState.COMPLETED and row["cancel_requested"]:
+                raise AppError("run_cancelled", "A cancelled run cannot complete successfully.")
             connection.execute(
                 "UPDATE runs SET state=?,reason=?,owner_id=NULL,finished_at=? WHERE id=?",
                 (state.value, reason, _now(), run_id),
@@ -896,8 +1095,16 @@ class Repository:
                         status="unknown",
                         started_at=operation["started_at"],
                         error_code="owner_lost",
+                        dispatch_status="unknown",
+                        request_payload=request.payload,
                     )
                     self._save_observation(connection, observation)
+                connection.execute(
+                    "UPDATE stage_attempts SET state='failed',finished_at=?,"
+                    "error_code='owner_lost' "
+                    "WHERE run_id=? AND state='pending'",
+                    (_now(), identity),
+                )
                 connection.execute(
                     "UPDATE runs SET state='interrupted',owner_id=NULL,reason='owner_lost',"
                     "finished_at=? WHERE id=?",

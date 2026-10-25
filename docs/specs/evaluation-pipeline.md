@@ -1,8 +1,8 @@
 # Four-agent evaluation pipeline
 
-Status: partial implementation. Task 6 implements the four role contracts, pinned pack
-and prompts, and deterministic evidence assertions. The coordinator and complete persisted
-execution pipeline remain pending.
+Status: implemented for chat contracts and controlled provider execution. Task 7 connects
+the four roles, pinned pack/prompts, and deterministic assertions through persisted daemon
+execution. Live semantic accuracy and the exhaustive recovery matrix remain later gates.
 
 ## Roles and handoffs
 
@@ -73,8 +73,7 @@ internal handoff contracts.
 `AgentRunner(connection, *, dispatch)` requires a callback receiving the gateway and
 finalized prepared request. The coordinator must save intent before network dispatch and
 save the returned observation before role interpretation. There is no default dispatch
-or agent-owned database/lifecycle state. This seam is implemented; its durable integration
-remains Task 7.
+or agent-owned database/lifecycle state. This seam is implemented; the coordinator now supplies durable integration.
 
 ## Reporter and report export
 
@@ -93,7 +92,9 @@ coverage, variant bounds, evidence provenance, and duplicate persistence handlin
 Interrupt a stage, inspect the preserved run, and exercise an explicit linked retry.
 Export twice and confirm no new target/provider calls.
 
-These are implementation acceptance criteria, not tests that currently pass.
+The [Task 7 record](../verification/evidence/cli-pipeline.json) covers normal execution
+and technical failure through the public CLI, real daemon, verified loopback HTTPS, and
+SQLite. Full interruption/retry acceptance, exports, and live model accuracy remain later gates.
 
 ## Design guidance
 

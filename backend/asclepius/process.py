@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import portalocker
 
+from asclepius.config import load_daemon
 from asclepius.domain import AppError, DaemonStatus
 from asclepius.maintenance import instance_lock, readiness_lock
 from asclepius.paths import local_directory
@@ -42,6 +43,9 @@ def daemon_status(data_dir: Path) -> DaemonStatus:
             "responsive": owned and generation_owned and fresh,
             "state": (control.state if generation_owned else "starting") if owned else "stopped",
             "pid": control.pid if generation_owned else None,
+            "execution_available": control.execution_available
+            if owned and generation_owned and fresh
+            else False,
         }
     )
 
@@ -61,11 +65,14 @@ def _wait_existing(directory: Path, timeout: float) -> DaemonStatus:
         time.sleep(0.05)
 
 
-def start_daemon(data_dir: Path, *, timeout: float = 15) -> DaemonStatus:
+def start_daemon(
+    data_dir: Path, *, timeout: float = 15, config: Path | None = None
+) -> DaemonStatus:
     directory = local_directory(data_dir)
     status = daemon_status(directory)
     if status.owned:
         return _wait_existing(directory, timeout)
+    policy = load_daemon(config.resolve() if config else None)
     instance = str(uuid4())
     log_dir = directory / "logs"
     child = None
@@ -89,6 +96,8 @@ def start_daemon(data_dir: Path, *, timeout: float = 15) -> DaemonStatus:
                     str(directory),
                     "--instance-id",
                     instance,
+                    "--policy-json",
+                    policy.model_dump_json(),
                 ],
                 cwd=directory,
                 stdin=subprocess.DEVNULL,

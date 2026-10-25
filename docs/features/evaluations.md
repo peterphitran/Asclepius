@@ -1,7 +1,7 @@
 # Evaluation Checks
 
-Status: partial. The built-in pack and four role contracts exist. Queued execution
-and live model assessment remain pending.
+Status: partial. The built-in pack and four role contracts execute through a persisted
+coordinator. Live model assessment accuracy remains pending.
 
 ## Sub-features
 
@@ -20,8 +20,8 @@ and live model assessment remain pending.
 
 List definitions with `asclepius checks list --pack broad-chat-v1 --json`. Submit the
 pack with `asclepius run <target> --pack broad-chat-v1 --evaluator <evaluator.toml>`
-after starting the daemon and configuring credentials. Submission accepts queued work;
-the daemon still reports `execution_available: false`.
+after starting the daemon and configuring credentials. Submission accepts background work. Inspect persisted phase/count progress and terminal
+results through `runs show` or `runs watch`.
 
 The pack has four objectives in each of five families, instruction priority, protected
 synthetic context, encoded instructions, conflicting context, and application policy.
@@ -47,7 +47,7 @@ transport, persistence, and result handling in the path.
 - A timeout or malformed reply is not a passing check.
 - The role runner uses immutable pinned prompts and typed proposals with a required
   dispatch callback. The coordinator must persist intent before dispatch and observations
-  before interpreting outputs. That integration remains Task 7.
+  before interpreting outputs. The coordinator now supplies that integration.
 - Local canary/schema assertions remain separate from semantic judgments. Quotes must
   occur in the actual reply. Reporter cannot change IDs, severity, or evidence and builds
   reproduction from the recorded request. Control over-refusal is a separate diagnostic.

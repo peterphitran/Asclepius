@@ -1,8 +1,9 @@
 # Runs
 
 Status: supplied-plan submission, saved-state inspection, watch, cancellation intent, and
-linked retry commands are implemented. A manually started daemon can accept supplied plans
-into the queue; actual evaluation execution remains unimplemented.
+linked retry commands are implemented. A manually started daemon accepts pinned plans
+into the queue and executes them through the coordinator. Phases, generated cases, stage attempts, observations and partial findings
+remain inspectable. Exhaustive crash/cancellation acceptance remains Task 8.
 
 ## Sub-features
 

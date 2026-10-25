@@ -880,3 +880,102 @@ def test_https_retry_after_cannot_reflect_any_configured_credential(
         assert reservations(repo) == [(kind, "settled", tokens)]
 
     asyncio.run(scenario())
+
+
+def test_dispatch_failure_retains_received_reply_when_settlement_fails(groq, tmp_path, monkeypatch):
+    from asclepius.adapters.chat import DispatchFailure
+
+    async def scenario():
+        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        call = adapter.prepare(request(snapshot, work))
+        await repo.begin_operation(call.request, instance_id=OWNER)
+
+        async def fail_settlement(reservation):
+            raise AppError("storage_error", "Injected settlement failure")
+
+        monkeypatch.setattr(adapter.connection.budgets, "settle", fail_settlement)
+        with pytest.raises(DispatchFailure) as caught:
+            await adapter.execute_prepared(call)
+        observation = caught.value.observation
+        assert observation.status == "success"
+        assert observation.payload.content == "hello"
+        assert observation.payload.response_id == "response-1"
+        assert observation.dispatch_status == "attempted"
+        assert caught.value.code == "storage_error"
+        await repo.save_observation(observation, instance_id=OWNER)
+        assert (await repo.read_run(str(snapshot.id))).observations == (observation,)
+        assert len(groq[0].calls) == 1
+
+    asyncio.run(scenario())
+
+
+def test_local_budget_rejection_has_explicit_nondispatch_metadata(groq, tmp_path, monkeypatch):
+    from asclepius.adapters.chat import DispatchFailure
+
+    async def scenario():
+        _, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch, target_calls=1)
+        await adapter.execute(request(snapshot, work))
+        with pytest.raises(DispatchFailure) as caught:
+            await adapter.execute(request(snapshot, work))
+        observation = caught.value.observation
+        assert observation.dispatch_status == "not_dispatched"
+        assert observation.status == "transport_error" and observation.payload is None
+        assert observation.error_code == "budget_exhausted"
+        assert len(groq[0].calls) == 1
+
+    asyncio.run(scenario())
+
+
+def test_prepared_intent_rejects_changed_observation_request_payload(groq, tmp_path, monkeypatch):
+    async def scenario():
+        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        call = adapter.prepare(request(snapshot, work))
+        await repo.begin_operation(call.request, instance_id=OWNER)
+        observation = await adapter.execute_prepared(call)
+        changed = observation.model_copy(
+            update={
+                "request_payload": ChatInput(messages=(Message(role="user", content="changed"),))
+            }
+        )
+        with pytest.raises(AppError) as caught:
+            await repo.save_observation(changed, instance_id=OWNER)
+        assert caught.value.code == "invalid_output"
+        assert (await repo.read_run(str(snapshot.id))).observations == ()
+        await repo.save_observation(observation, instance_id=OWNER)
+        assert (await repo.read_run(str(snapshot.id))).observations == (observation,)
+
+    asyncio.run(scenario())
+
+
+def test_coordinator_storage_failure_keeps_received_evidence_and_running_owner(
+    groq, tmp_path, monkeypatch
+):
+    from asclepius.checks import load_pack_plan
+    from asclepius.coordinator import Coordinator
+    from asclepius.domain import RunState
+
+    async def scenario():
+        repo, snapshot, _, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        plan = load_pack_plan("broad-chat-v1")
+        snapshot = snapshot.model_copy(update={"checks": plan.checks, "prompts": plan.prompts})
+        with sqlite3.connect(repo.database_path) as connection:
+            connection.execute(
+                "UPDATE runs SET snapshot_json=? WHERE id=?",
+                (snapshot.model_dump_json(), str(snapshot.id)),
+            )
+
+        async def fail_settlement(reservation):
+            raise AppError("storage_error", "Injected settlement failure")
+
+        monkeypatch.setattr(adapter.connection.budgets, "settle", fail_settlement)
+        with pytest.raises(AppError) as caught:
+            await Coordinator(repo, adapter.connection.budgets, transport=groq[1]).execute(snapshot)
+        assert caught.value.code == "storage_error"
+        view = await repo.read_run(str(snapshot.id))
+        assert view.state == RunState.RUNNING
+        assert len(view.observations) == 1
+        assert view.observations[0].payload.content == "hello"
+        assert view.attempts[0].state == "pending"
+        assert len(groq[0].calls) == 1
+
+    asyncio.run(scenario())

@@ -93,15 +93,17 @@ migration, lock exclusion, cancellation-safe worker drain, and separately exerci
 Loopback HTTP handlers record destination concurrency; fixtures do not substitute for model
 evaluation. Shared origin/reference rate gates reject alias bypasses.
 
-Both rebuilt wheels pass `backend/scripts/verify_daemon.py` outside the source tree. It
-drives the real CLI with synthetic credential references, submits to a real ready control
-daemon, verifies that the run stays queued, stops that daemon, and reads/cancels while stopped.
+The Task 4 rebuilt wheels passed the then-current `backend/scripts/verify_daemon.py`
+outside the source tree. That version drove the real CLI with synthetic credentials,
+submitted to a real ready control daemon, verified queued state, stopped it, and read/cancelled
+while stopped. Task 7 updates the executable driver for current execution behavior.
 Its temporary stores are removed after its owned child exits.
 
 One native creator-exit test failed during review and then passed its reruns and ten extra
 probes. That unexplained failure remains recorded. Physical terminal-close, sleep/shutdown,
 real provider calls, and scheduler/recovery integration are not proved by Task 4.
-The daemon reports `execution_available: false`; no queued run is dispatched yet.
+At the Task 4 checkpoint the daemon reported `execution_available: false` and did not
+dispatch queued runs.
 Submission uses persisted heartbeat freshness, so abrupt owner loss can leave up to ten
 seconds of queued acceptance before the record becomes stale. Status/start use the OS
 generation lease; enqueue is not an immediate crash detector.
@@ -125,7 +127,7 @@ The record includes exact full-suite results, source hashes, wheel hashes, revie
 and regressions. No live key or hosted model was used. At the Task 5 checkpoint, built-in
 checks and four-role agents remained future work; Task 6 implements those components below.
 Coordinator execution, reports, comparisons, and physical terminal-close acceptance remain
-later gates. The daemon still reports `execution_available: false`.
+later gates at that checkpoint, whose daemon reported `execution_available: false`.
 
 ## Recorded broad pack and role contracts
 
@@ -142,8 +144,28 @@ ready record and deterministic callbacks through real gateway preparation. It do
 start a daemon, send provider requests, or persist role observations through a coordinator.
 Its synthetic target observation does not establish real model behavior. No live key is used.
 
-The coordinator, queued execution, semantic accuracy, comparisons, and report export remain
-later gates. The daemon still reports `execution_available: false`.
+At the Task 6 checkpoint, coordinator execution, semantic accuracy, comparisons, and report
+export remained later gates. Its daemon reported `execution_available: false`.
+
+## Recorded coordinator execution
+
+The [Task 7 record](verification/evidence/cli-pipeline.json) covers persisted execution
+through public CLI subprocesses, real detached daemons, verified loopback HTTPS, and
+SQLite. Provider replies are deterministic fixtures. Completed broad-pack runs execute
+80 target cases and all four roles, retaining pass, weakness, and incomplete inconclusive
+judgments. Technical failures preserve prior findings and provider evidence.
+
+The full suites passed 331 WSL tests and 330 native Windows tests with one existing
+WSL-only skip. Those runs preceded a fixture-only SQLite cleanup fix; two focused
+regressions per platform and the final installed-wheel proofs cover that fix. Runtime
+package code was unchanged. Ruff passed. The legacy Starlette HTTPX warning remains.
+
+The installed driver is `backend/scripts/verify_pipeline.py`. It checks prepared intents
+and generated inputs at provider receipt, two concurrent aliases under shared bounds,
+and HTTP/invalid-proposal failures. It asserts an installed import, stops owned daemons,
+and removes temporary stores. Exact final platform results, hashes, reviewer responses,
+and proof output are retained in the record. Live Groq behavior, semantic accuracy, full
+crash/cancellation acceptance, comparisons, and exports remain later gates.
 
 ## Feature-map convention
 
