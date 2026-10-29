@@ -26,6 +26,7 @@ from asclepius.domain import (
     RunSnapshot,
     TargetConfig,
 )
+from asclepius.exports import render_report
 from asclepius.limits import BudgetManager
 from asclepius.models import ModelGateway
 from asclepius.storage import Repository
@@ -45,6 +46,11 @@ class Provider(BaseHTTPRequestHandler):
         response = json.dumps(
             {
                 "id": "loopback-proof",
+                "model": (
+                    "evaluator-reported-proof"
+                    if "response_format" in body
+                    else "target-reported-proof"
+                ),
                 "choices": [
                     {
                         "index": 0,
@@ -114,7 +120,9 @@ async def prove(data_dir, server, transport):
     await repo.enqueue(snapshot)
     await repo.claim_next(owner)
     work = uuid4()
-    await repo.register_work_item(str(snapshot.id), str(work), "proof", instance_id=owner)
+    await repo.register_work_item(
+        str(snapshot.id), str(work), "proof", variant_id=str(uuid4()), instance_id=owner
+    )
     connection = GroqConnection(snapshot, BudgetManager(repo, owner), transport=transport)
     target = ChatAdapter(connection)
     call = target.prepare(
@@ -135,7 +143,17 @@ async def prove(data_dir, server, transport):
     result = await gateway.execute(evaluation)
     assert result.output == Answer(verdict="pass")
     await repo.save_observation(result.observation, instance_id=owner)
-    assert len((await repo.read_run(str(snapshot.id))).observations) == 2
+    view = await repo.read_run(str(snapshot.id))
+    assert len(view.observations) == 2
+    identities = {item.actor: item.payload.provider_model for item in view.observations}
+    assert identities == {"target": "target-reported-proof", "judge": "evaluator-reported-proof"}
+    assert identities["target"] != snapshot.profile.target.model
+    assert identities["judge"] != snapshot.evaluator.roles.judge.model
+    for format in ("json", "markdown", "html"):
+        artifact = render_report(view, format)
+        for reported in identities.values():
+            assert reported in artifact.content
+        assert "provider_model" in artifact.content
     assert len(server.calls) == 2
     assert server.calls[0][0] == "/target/chat/completions"
     assert server.calls[1][0] == "/evaluator/chat/completions"
@@ -148,6 +166,8 @@ async def prove(data_dir, server, transport):
             ("settled",),
             ("settled",),
         ]
+
+    return identities
 
 
 def main():
@@ -168,7 +188,7 @@ def main():
     )
     try:
         with tempfile.TemporaryDirectory(prefix="asclepius-groq-proof-") as temporary:
-            asyncio.run(prove(Path(temporary), server, transport))
+            identities = asyncio.run(prove(Path(temporary), server, transport))
     finally:
         server.shutdown()
         server.server_close()
@@ -176,7 +196,10 @@ def main():
     print(
         json.dumps(
             {
+                "scope": "deterministic HTTPS components, storage and exports",
                 "installed_import": str(installed),
+                "provider_reported_models": identities,
+                "verified_export_formats": ["json", "markdown", "html"],
                 "loopback_https_requests": 2,
                 "persisted_observations": 2,
                 "validated_evaluator_output": True,

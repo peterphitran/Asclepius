@@ -59,6 +59,7 @@ class _Choice(_WireModel):
 
 class _Reply(_WireModel):
     id: str | None = None
+    model: str | None = None
     choices: list[_Choice] = Field(min_length=1, max_length=1)
     usage: _Usage | None = None
 
@@ -299,16 +300,25 @@ class GroqConnection:
         ):
             raise AppError("provider_response", "Provider returned no complete chat reply.")
         raw_content = message.content or ""
-        content = self.redact_content(raw_content)
         usage = reply.usage or _Usage()
         try:
             raw_content_bytes = len(raw_content.encode("utf-8"))
             if reply.id:
                 reply.id.encode("utf-8")
+            if reply.model:
+                reply.model.encode("utf-8")
+        except UnicodeError:
+            raise AppError("provider_response", "Invalid Unicode in provider response.") from None
+        content = self.redact_content(raw_content)
+        provider_model = self.redact_content(reply.model) if reply.model else None
+        try:
+            if provider_model:
+                provider_model.encode("utf-8")
         except UnicodeError:
             raise AppError("provider_response", "Invalid Unicode in provider response.") from None
         return ChatOutput(
             content=content,
+            provider_model=provider_model,
             response_id=self.redact(reply.id) if reply.id else None,
             finish_reason=choice.finish_reason,
             usage=TokenUsage(

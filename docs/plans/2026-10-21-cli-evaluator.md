@@ -810,6 +810,34 @@ with actual observed behavior. Add pytest marker declarations in `backend/pyproj
   JSON. No keys, fabricated provider outputs, or requirement for identical model answers.
 - [ ] Commit only actual tests/docs/evidence: `test: verify live Groq CLI workflow`.
 
+#### Task 10 implementation checkpoints
+
+The accepted design uses explicit pytest scenarios and scoped resource owners. A reusable
+session state machine was considered; its additional public types are deferred until reuse
+requires them. Preflight, paid attempts, and cleanup have one owner per scenario.
+
+First close the observed metadata gap before building live acceptance. Add nullable
+`ChatOutput.provider_model`, populated only from the provider reply's top-level `model`.
+Missing, null, and empty strings mean unknown. Preserve other valid strings after the
+connection's existing recursive credential redaction. Strict wrong types and invalid UTF-8
+before or after redaction fail with a safe `provider_response` error. Do not fall back to the requested model or
+require equality at runtime. Metadata redaction does not change `content_redacted`.
+Older documents omit this field and remain readable without rewriting their saved bytes.
+The JSON observation path needs no table migration. The reported value is provider evidence,
+not proof of a serving deployment or remote revision.
+
+Verify this prerequisite through target and strict evaluator HTTPS, persistence, legacy
+replay, malformed and secret-bearing replies, and all three exports. Extend the existing
+installed component proof. Commit it independently before the opt-in acceptance tests.
+This prerequisite does not complete any live or terminal-close acceptance checkbox.
+
+The later live scenario requires explicit opt-in and an environment credential before calls.
+Count bounded model-access preflights separately, deduplicated by origin, credential reference,
+model, and strict-output mode. Run two full packs within separate pinned budgets. Never retry
+uncertain paid attempts or silently raise the limits. Technical workflow checks and manual
+semantic review have separate outcomes. Controlled PTY or classic-console tests establish only
+their observed OS mechanism; physical live terminal closure remains a distinct acceptance gap.
+
 ### Task 11: Ollama through the existing target boundary
 
 **Files:** Create `backend/asclepius/adapters/ollama.py`, `backend/examples/ollama-target.toml`,

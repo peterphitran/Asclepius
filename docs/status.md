@@ -9,7 +9,10 @@ intent precedes every call; observations precede role acceptance; stage failures
 partial findings. Saved findings, labeled comparisons, and local JSON/Markdown/HTML reports
 with outcome charts are available without a running daemon. The public runtime proof uses
 deterministic providers over loopback HTTPS.
-Hosted Groq behavior and semantic assessment accuracy remain unverified.
+Saved chat observations now retain optional `provider_model` evidence from the response,
+separately from the requested model. Older observations keep this value unknown.
+The [metadata prerequisite record](verification/evidence/cli-provider-model.json) covers
+the offline checks. Hosted Groq behavior and semantic assessment accuracy remain unverified.
 
 This worktree starts from `d13e794` and carries the current documentation. The original
 checkout's frontend deletion and uncommitted backend lifecycle changes remain there,

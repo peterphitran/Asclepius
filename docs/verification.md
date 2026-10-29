@@ -239,6 +239,22 @@ Native Windows skips the WSL-only mount case, POSIX directory fsync, and privile
 creation when unavailable.
 Live hosted-provider and physical terminal-close acceptance remain Task 10.
 
+## Provider-reported model prerequisite
+
+The [metadata evidence record](verification/evidence/cli-provider-model.json) covers the
+Task 10 prerequisite. Optional `ChatOutput.provider_model` records only the response's
+`model`, after credential redaction. Missing, null, and empty metadata stay unknown.
+Malformed types and invalid Unicode fail safely. Saved requests retain the requested model
+separately. The reported value does not establish the serving deployment or remote revision.
+Old observation documents remain readable and replay without byte rewrites.
+
+Verified HTTPS regressions exercise target and strict evaluator replies, literal and escaped
+credential reflection, raw and post-redaction Unicode, persistence, and three export formats.
+The installed component proof checks the same identity distinction on Linux and native
+Windows. It uses deterministic replies and two HTTPS requests per platform. It does not prove
+queued CLI execution, hosted Groq behavior, semantic accuracy, or terminal-close survival.
+Task 10 remains incomplete. Opt-in live tests and owned terminal scenarios are still pending.
+
 ## Feature-map convention
 
 Each feature file has four sections: sub-features, user entry point, terminal driving,

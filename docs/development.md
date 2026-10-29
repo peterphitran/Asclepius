@@ -50,7 +50,9 @@ python <checkout>/backend/scripts/verify_groq.py <checkout>/backend/tests/cli/fi
 
 The script asserts a `site-packages` import, runs two real loopback HTTPS requests using
 synthetic credentials, validates an evaluator reply, and persists both observations with
-real SQLite budgets. It removes its temporary store and closes its server. The checked-in
+real SQLite budgets. It checks provider-reported target and evaluator model names that
+differ from requested names, then retains them through saved reads and all three report
+formats. It removes its temporary store and closes its server. The checked-in
 localhost key is public test material. No real API key, production trust change, live Groq
 response, queued CLI execution, or four-agent pipeline is involved.
 

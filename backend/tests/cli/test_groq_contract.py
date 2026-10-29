@@ -22,6 +22,7 @@ from asclepius.domain import (
     PromptSnapshot,
     TargetConfig,
 )
+from asclepius.exports import render_report
 from asclepius.limits import BudgetManager
 from asclepius.models import ModelGateway, strict_schema
 from asclepius.storage import Repository
@@ -62,7 +63,7 @@ def reply(content="hello", finish="stop", **message):
     }
 
 
-async def setup(groq, tmp_path, monkeypatch, **limits):
+async def setup(groq, tmp_path, monkeypatch, *, legacy_case=False, **limits):
     server, transport = groq
     monkeypatch.setenv("TARGET_KEY", "target-secret-123")
     monkeypatch.setenv("EVALUATOR_KEY", "evaluator-secret-456")
@@ -103,7 +104,13 @@ async def setup(groq, tmp_path, monkeypatch, **limits):
     await repo.enqueue(snapshot)
     await repo.claim_next(OWNER)
     work_id = uuid4()
-    await repo.register_work_item(str(snapshot.id), str(work_id), "test.check", instance_id=OWNER)
+    await repo.register_work_item(
+        str(snapshot.id),
+        str(work_id),
+        "test.check",
+        variant_id=str(uuid4()) if legacy_case else None,
+        instance_id=OWNER,
+    )
     budgets = BudgetManager(repo, OWNER, limits=profile.limits)
     connection = GroqConnection(snapshot, budgets, transport=transport)
     adapter = ChatAdapter(connection)
@@ -547,6 +554,7 @@ def test_older_operation_and_observation_json_replays_without_rewrite(groq, tmp_
         old_observation.pop("retry_after")
         old_observation["payload"].pop("raw_content_bytes")
         old_observation["payload"].pop("content_redacted")
+        old_observation["payload"].pop("provider_model", None)
         request_json = json.dumps(old_request, sort_keys=True, separators=(",", ":"))
         observation_json = json.dumps(old_observation, sort_keys=True, separators=(",", ":"))
         with sqlite3.connect(repo.database_path) as connection:
@@ -561,6 +569,10 @@ def test_older_operation_and_observation_json_replays_without_rewrite(groq, tmp_
         assert intent.created is False
         restored = Observation.model_validate_json(observation_json)
         assert restored.retry_after is None
+        assert restored.payload.provider_model is None
+        assert (await repo.read_run(str(snapshot.id))).observations[
+            0
+        ].payload.provider_model is None
         await repo.save_observation(restored, instance_id=OWNER)
         with sqlite3.connect(repo.database_path) as connection:
             assert (
@@ -574,6 +586,7 @@ def test_older_operation_and_observation_json_replays_without_rewrite(groq, tmp_
         with pytest.raises(AppError) as caught:
             await repo.begin_operation(raw.model_copy(update={"actor": "judge"}), instance_id=OWNER)
         assert caught.value.code == "conflict"
+        assert len(groq[0].calls) == 1
 
     asyncio.run(scenario())
 
@@ -976,6 +989,161 @@ def test_coordinator_storage_failure_keeps_received_evidence_and_running_owner(
         assert len(view.observations) == 1
         assert view.observations[0].payload.content == "hello"
         assert view.attempts[0].state == "pending"
+        assert len(groq[0].calls) == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("actor", ["target", "judge"])
+@pytest.mark.parametrize(
+    "metadata", [{}, {"model": None}, {"model": ""}, {"model": "  modèle-版本 🌡  "}]
+)
+def test_https_reported_model_is_optional_provider_evidence(
+    groq, tmp_path, monkeypatch, actor, metadata
+):
+    async def scenario():
+        repo, snapshot, work, adapter, gateway = await setup(groq, tmp_path, monkeypatch)
+        content = "hello" if actor == "target" else '{"verdict":"pass","score":2}'
+        groq[0].body = json.dumps({**reply(content), **metadata}).encode()
+        if actor == "target":
+            call = adapter.prepare(request(snapshot, work))
+        else:
+            evaluation = gateway.prepare(actor, {}, Answer)
+            call = evaluation.call
+        await repo.begin_operation(call.request, instance_id=OWNER)
+        if actor == "target":
+            observation = await adapter.execute_prepared(call)
+        else:
+            result = await gateway.execute(evaluation)
+            assert result.output == Answer(verdict="pass", score=2)
+            observation = result.observation
+        assert observation.status == "success"
+        expected = metadata.get("model") or None
+        assert observation.payload.model_dump().get("provider_model") == expected
+        assert groq[0].calls[0][2]["model"] == actor + "-model"
+        assert observation.payload.content_redacted is False
+        assert observation.payload.raw_content_bytes == len(content.encode("utf-8"))
+        await repo.save_observation(observation, instance_id=OWNER)
+        restored = (await repo.read_run(str(snapshot.id))).observations[0]
+        assert restored == observation
+        await repo.save_observation(restored, instance_id=OWNER)
+        assert not (await repo.begin_operation(call.request, instance_id=OWNER)).created
+        assert len(groq[0].calls) == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("actor", ["target", "judge"])
+@pytest.mark.parametrize("model", [17, False, [], {}, "\ud800"])
+def test_https_invalid_reported_model_fails_safely(groq, tmp_path, monkeypatch, actor, model):
+    async def scenario():
+        _, snapshot, work, adapter, gateway = await setup(groq, tmp_path, monkeypatch)
+        groq[0].body = json.dumps(
+            {**reply('{"verdict":"pass","score":2}'), "model": model}
+        ).encode()
+        if actor == "target":
+            observation = await adapter.execute(request(snapshot, work))
+        else:
+            result = await gateway.execute(gateway.prepare(actor, {}, Answer))
+            assert result.output is None
+            observation = result.observation
+        assert observation.status == "transport_error"
+        assert observation.error_code == "provider_response"
+        assert observation.payload is None
+        assert len(groq[0].calls) == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("encoded", [False, True])
+def test_https_reported_models_redact_both_credentials_before_storage_and_exports(
+    groq, tmp_path, monkeypatch, encoded
+):
+    async def scenario():
+        repo, snapshot, work, _, _ = await setup(groq, tmp_path, monkeypatch, legacy_case=True)
+        secrets = ('target-"credential-\\value', 'evaluator-"credential-\\value')
+        monkeypatch.setenv("TARGET_KEY", secrets[0])
+        monkeypatch.setenv("EVALUATOR_KEY", secrets[1])
+        connection = GroqConnection(snapshot, BudgetManager(repo, OWNER), transport=groq[1])
+        adapter = ChatAdapter(connection)
+        gateway = ModelGateway(connection, work_item_id=work)
+        expected_models = {}
+        for actor in ("target", "judge"):
+            model = {"actor": actor + "-reported", "credentials": list(secrets)}
+            reported = json.dumps(model) if encoded else " ".join((actor + "-reported", *secrets))
+            content = "hello" if actor == "target" else '{"verdict":"pass","score":2}'
+            groq[0].body = json.dumps({**reply(content), "model": reported}).encode()
+            if actor == "target":
+                call = adapter.prepare(request(snapshot, work))
+            else:
+                evaluation = gateway.prepare(actor, {}, Answer)
+                call = evaluation.call
+            await repo.begin_operation(call.request, instance_id=OWNER)
+            if actor == "target":
+                observation = await adapter.execute_prepared(call)
+            else:
+                result = await gateway.execute(evaluation)
+                assert result.output == Answer(verdict="pass", score=2)
+                observation = result.observation
+            expected = (
+                json.dumps(
+                    {"actor": actor + "-reported", "credentials": ["[REDACTED]"] * 2},
+                    separators=(",", ":"),
+                )
+                if encoded
+                else actor + "-reported [REDACTED] [REDACTED]"
+            )
+            expected_models[actor] = expected
+            if observation.payload.model_dump().get("provider_model") != expected:
+                raise AssertionError("Reported model was not safely retained")
+            assert observation.payload.content_redacted is False
+            assert observation.payload.raw_content_bytes == len(content.encode())
+            await repo.save_observation(observation, instance_id=OWNER)
+        view = await repo.read_run(str(snapshot.id))
+        with sqlite3.connect(repo.database_path) as database:
+            documents = database.execute("SELECT document_json FROM observations").fetchall()
+        saved_models = {item.actor: item.payload.provider_model for item in view.observations}
+        if saved_models != expected_models:
+            raise AssertionError("Saved model metadata changed")
+        artifacts = [render_report(view, format).content for format in ("json", "markdown", "html")]
+        for text in [view.model_dump_json(), *(row[0] for row in documents), *artifacts]:
+            for secret in secrets:
+                for forbidden in (secret, json.dumps(secret)[1:-1]):
+                    if forbidden in text:
+                        raise AssertionError("Credential leaked into saved evidence or export")
+            assert "provider_model" in text
+        for text in [view.model_dump_json(), *artifacts]:
+            for actor in ("target", "judge"):
+                assert actor + "-reported" in text
+        assert len(groq[0].calls) == 2
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("actor", ["target", "judge"])
+def test_metadata_redaction_cannot_materialize_invalid_unicode(groq, tmp_path, monkeypatch, actor):
+    async def scenario():
+        repo, snapshot, work, adapter, gateway = await setup(groq, tmp_path, monkeypatch)
+        model = json.dumps({"name": "\ud800", "credential": "target-secret-123"})
+        groq[0].body = json.dumps(
+            {**reply('{"verdict":"pass","score":2}'), "model": model}
+        ).encode()
+        if actor == "target":
+            call = adapter.prepare(request(snapshot, work))
+        else:
+            evaluation = gateway.prepare(actor, {}, Answer)
+            call = evaluation.call
+        await repo.begin_operation(call.request, instance_id=OWNER)
+        if actor == "target":
+            observation = await adapter.execute_prepared(call)
+        else:
+            result = await gateway.execute(evaluation)
+            observation = result.observation
+        assert observation.status == "transport_error"
+        assert observation.error_code == "provider_response"
+        assert observation.payload is None
+        await repo.save_observation(observation, instance_id=OWNER)
+        assert (await repo.read_run(str(snapshot.id))).observations == (observation,)
         assert len(groq[0].calls) == 1
 
     asyncio.run(scenario())

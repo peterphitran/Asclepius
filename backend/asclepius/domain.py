@@ -234,6 +234,7 @@ class TokenUsage(Contract):
 
 class ChatOutput(Contract):
     content: str
+    provider_model: str | None = None
     response_id: str | None = None
     finish_reason: str | None = None
     usage: TokenUsage = Field(default_factory=TokenUsage)

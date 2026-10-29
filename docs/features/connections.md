@@ -1,8 +1,9 @@
 # Target Connections
 
-Status: partial. Groq chat target and evaluator boundaries have component implementations.
-CLI queued-run execution and hosted-model acceptance remain unimplemented/unverified.
-See the [Task 5 component evidence](../verification/evidence/cli-groq-components.json).
+Status: partial. Groq chat boundaries and queued CLI execution are implemented and verified
+with deterministic HTTPS providers. Hosted-model acceptance remains unverified.
+See the [execution evidence](../verification/evidence/cli-pipeline.json) and the
+[model metadata prerequisite](../verification/evidence/cli-provider-model.json).
 
 ## Sub-features
 
@@ -58,3 +59,8 @@ HTTPS and real local SQLite budgets. It does not run a CLI evaluation or contact
   Require isolated/stateless execution or explicit side-effect opt-in under the RAG contract.
 - Access-control checks need distinct named setup/query credentials; never silently
   query as an administrator because a lower-privilege credential is missing.
+
+Saved chat replies expose optional `provider_model` in observation payloads and exports.
+This value comes from the provider response after redaction. Requested model names remain
+in pinned configuration. Missing reported metadata is unknown, and the value is a provider
+self-report rather than proof of a deployment.
