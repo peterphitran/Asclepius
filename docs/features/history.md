@@ -1,7 +1,8 @@
 # History and Comparisons
 
-Status: paginated run history and full saved-run inspection are implemented. Comparisons
-and actual daemon restart verification remain planned.
+Status: paginated history, saved-run inspection, manual restart recovery, and labeled
+comparisons are implemented. [Task 9](../verification/evidence/cli-results.json) verifies
+coherent comparison reads and derived counts without provider calls.
 
 ## Sub-features
 
@@ -17,7 +18,9 @@ List prior runs, choose one for details, or select a pair for comparison.
 The [backend design](../specs/backend-design.md) defines immutable run snapshots and
 linked retries. Use `runs list --limit <1-500> --cursor <next-cursor>` and
 `runs show <run-id>`. Filter by stable identity with `runs list --profile <profile-id>`.
-Lists use ascending UUID order, not execution time. Comparisons remain unimplemented.
+Lists use ascending UUID order, not execution time. Use `compare <run-a> <run-b> [<run-c> ...]`
+for side-by-side outcome counts, denominators, and configuration differences. All selected
+runs come from one SQLite snapshot; a missing ID fails the whole comparison.
 
 ## Driving it with the terminal
 
@@ -27,7 +30,12 @@ against per-check records. Include empty history and unknown run IDs.
 
 ## Gotchas
 
-- Changing checks or target configuration can make runs incomparable.
+- Changing checks, check execution order, evaluator settings, or target configuration can
+  make runs incompatible. A target-model-only change is labeled cross-model.
+- Equal pinned settings do not establish immutable remote revisions or paired generated
+  inputs. Comparisons show counts without numerical deltas, causal claims, or a score.
+- Selected but unrun families show zero generated cases; a family absent from the snapshot
+  is not selected. Missing judgments and legacy unknown-kind cases remain separate.
 - Error counts and denominators affect apparent improvements.
 - Proposed first milestone: no automatic history purge. Explicit deletion/import and
   backup/restore commands need separate designs; do not copy a live SQLite file casually.

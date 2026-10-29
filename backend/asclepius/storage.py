@@ -16,10 +16,12 @@ from asclepius.domain import (
     BudgetReservation,
     DaemonStatus,
     Finding,
+    FindingDetail,
     FindingOutput,
     GenerationOutput,
     Judgment,
     JudgmentOutput,
+    LegacyCaseIdentity,
     Limits,
     Observation,
     OperationIntent,
@@ -831,6 +833,24 @@ class Repository:
                 )
             )
 
+        legacy_cases = tuple(
+            LegacyCaseIdentity(
+                work_item_id=item["id"],
+                variant_id=item["variant_id"],
+                check_id=item["check_id"],
+                request=OperationRequest.model_validate_json(item["request_json"])
+                if item["request_json"] is not None
+                else None,
+            )
+            for item in connection.execute(
+                "SELECT w.id,w.variant_id,w.check_id,o.request_json FROM work_items w "
+                "LEFT JOIN operations o ON o.run_id=w.run_id AND o.work_item_id=w.id "
+                "AND COALESCE(json_extract(o.request_json,'$.actor'),'target')='target' "
+                "WHERE w.run_id=? AND w.variant_id IS NOT NULL AND w.variant_json IS NULL "
+                "ORDER BY w.rowid",
+                (row["id"],),
+            )
+        )
         snapshot = RunSnapshot.model_validate_json(row["snapshot_json"])
         variants = tuple(
             Variant.model_validate_json(item[0])
@@ -859,6 +879,7 @@ class Repository:
         )
         return RunView(
             snapshot=snapshot,
+            legacy_cases=legacy_cases,
             attempts=attempts,
             variants=variants,
             progress=RunProgress(
@@ -887,6 +908,46 @@ class Repository:
         return await self._run(
             lambda connection: self._view(connection, self._run_row(connection, run_id))
         )
+
+    async def read_runs(self, run_ids: list[str]) -> tuple[RunView, ...]:
+        try:
+            identities = tuple(str(UUID(identity)) for identity in run_ids)
+        except ValueError:
+            raise AppError("arguments", "Run IDs must be UUIDs.", 2) from None
+        if not identities or len(set(identities)) != len(identities):
+            raise AppError("arguments", "Supply distinct run IDs.", 2)
+
+        def action(connection):
+            captured_at = datetime.now(UTC)
+            return tuple(
+                self._view(connection, self._run_row(connection, identity)).model_copy(
+                    update={"captured_at": captured_at}
+                )
+                for identity in identities
+            )
+
+        return await self._run(action)
+
+    async def read_finding_detail(self, finding_id: str) -> FindingDetail:
+        from asclepius.results import finding_detail
+
+        try:
+            identity = UUID(finding_id)
+        except ValueError:
+            raise AppError("arguments", "Finding ID must be a UUID.", 2) from None
+
+        def action(connection):
+            row = connection.execute(
+                "SELECT run_id FROM findings WHERE id=?", (str(identity),)
+            ).fetchone()
+            if row is None:
+                raise AppError("not_found", "Finding not found.", 3)
+            view = self._view(connection, self._run_row(connection, row[0])).model_copy(
+                update={"captured_at": datetime.now(UTC)}
+            )
+            return finding_detail(view, identity)
+
+        return await self._run(action)
 
     @staticmethod
     def _profile_row(connection: sqlite3.Connection, identity: str | UUID) -> sqlite3.Row:

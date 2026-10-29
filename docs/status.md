@@ -1,12 +1,14 @@
 # Implementation Status
 
-Implementation checkpoint on 2026-10-25 America/Chicago, branch `codex/cli-evaluator`.
+Implementation checkpoint on 2026-10-29 America/Chicago, branch `codex/cli-evaluator`.
 
-Tasks 1 through 8 implement CLI management, SQLite history, manual detached daemon
+Tasks 1 through 9 implement CLI management, SQLite history, manual detached daemon
 control, provider components, the broad pack, and persisted evaluation execution. The
 daemon claims bounded queued work and routes it through the coordinator. Prepared request
 intent precedes every call; observations precede role acceptance; stage failures preserve
-partial findings. The public runtime proof uses deterministic providers over loopback HTTPS.
+partial findings. Saved findings, labeled comparisons, and local JSON/Markdown/HTML reports
+with outcome charts are available without a running daemon. The public runtime proof uses
+deterministic providers over loopback HTTPS.
 Hosted Groq behavior and semantic assessment accuracy remain unverified.
 
 This worktree starts from `d13e794` and carries the current documentation. The original
@@ -25,6 +27,7 @@ discarding the original removal work.
 | Daemon control | `backend/asclepius/process.py`, `daemon.py` | Manual detached start, generation-bound readiness, heartbeat, duplicate exclusion, drain/stop. Claims within shared limits, heartbeats independently, and drains active work. |
 | Bounds | `backend/asclepius/limits.py` | Shared request gates/rates and durable call/completion reservations, connected to provider components. Cancellation before dispatch releases allowance; uncertain dispatch retains it. |
 | Provider components | `backend/asclepius/transport.py`, `adapters/chat.py`, `models.py` | Bounded HTTPS, independent credentials, redacted immutable requests, strict evaluator schemas, typed errors and validated retry timing. No automatic retries; coordinator persists their evidence. |
+| Saved results and exports | `backend/asclepius/results.py`, `exports.py` | Coherent comparison summaries, separate attack/control/legacy outcomes, inert JSON/Markdown/HTML and atomic local publication. |
 | Checks and agents | `backend/asclepius/checks.py`, `agents.py`, `packs/`, `prompts/` | Twenty pinned checks, three generated attacks and one code-owned control per check. Four role contracts require an injected prepared-request dispatch. Coordinator supplies durable dispatch. |
 | Local migrations | `backend/asclepius/maintenance.py`, `migrations/` | New schema v3 and explicit stopped v1/v2 upgrade, OS/maintenance locking, rollback, and local-only path policy. |
 | API | `backend/app/api/` | Auth, target, campaign, sweep, finding, review, summary, and health routes. |
@@ -44,8 +47,9 @@ API authentication is also current code, not a requirement for the personal CLI.
 
 ## Missing product capabilities
 
-There is no comparison engine or report/chart generator.
-Hosted Groq responses and semantic judgment accuracy remain unverified.
+Hosted Groq responses, semantic judgment accuracy, and physical terminal-close acceptance
+remain unverified. Saved comparisons and exports use deterministic fixture evidence in
+[Task 9 verification](verification/evidence/cli-results.json).
 Legacy plans remain readable and can queue, but the role runner requires three strategies
 per check. Legacy judgments without check lineage cannot initiate Reporter. JSON-schema
 violation findings require the entire reply as evidence within the 4096-byte quote cap.

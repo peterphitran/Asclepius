@@ -697,22 +697,87 @@ are retained in [Task 8 evidence](../verification/evidence/cli-recovery.json).
 `write_export(artifact: ExportArtifact, destination: Path, overwrite: bool = False) -> Path`;
 `safe_terminal(text: str) -> str`.
 
-- [ ] Write tests for zero cases, missing IDs, partial/live runs, no findings, controls,
+- [x] Write tests for zero cases, missing IDs, partial/live runs, no findings, controls,
   failures, incompatible check/model/target settings, unknown remote revisions, and actual
   counts against fixture logs. Separate check compatibility from deliberately changed
   target model: allow labeled cross-model comparison, not an unlabeled like-for-like claim.
-- [ ] Add HTML/script/link/Markdown-fence and ANSI/OSC injection inputs; assert inert escaped
+- [x] Add HTML/script/link/Markdown-fence and ANSI/OSC injection inputs; assert inert escaped
   output. Test export refuses existing destination and repeated export invokes no target/provider.
   Simulate interrupted write; previous file remains intact and scratch artifacts are removed.
-- [ ] Run `python -m pytest tests/cli/test_results.py tests/cli/test_exports.py -q`; expect failures.
-- [ ] Implement coherent SQLite read snapshots, cursor-based findings detail/list, JSON,
+- [x] Record public CLI RED for saved zero-generated report returning `not_implemented`,
+  then run focused result/export/CLI and legacy/publication regressions on both platforms.
+- [x] Implement coherent SQLite read snapshots, cursor-based findings detail/list, JSON,
   Markdown, self-contained HTML with inline SVG outcome counts and per-family comparison.
   Display denominator, control outcomes, uncertainty, truncation, usage, and evaluator identity;
   do not invent a combined security score. Write temporary file in destination directory and
   replace atomically under a destination lock; avoid check-then-overwrite races.
-- [ ] Repeat tests and open generated known-data HTML in a browser; check visible labels,
+- [x] Repeat tests and open generated known-data HTML in a browser; check visible labels,
   empty/partial states, and chart counts. Record visual observation, not just file existence.
-- [ ] Commit owned files: `feat: inspect compare and export evaluation evidence`.
+- [x] Commit owned files: `feat: inspect compare and export evaluation evidence`.
+
+#### Accepted Task 9 implementation shape
+
+Use one private case ledger and typed `RunResults` projection. Existing `RunSummary`
+remains the lightweight history-list item. Delivery status and judgment outcomes are
+independent partitions, and controls never enter attack counts. Seed family rows from
+requested pinned checks, including selected families with zero generated cases; only
+families absent from a snapshot are not selected. Overall counts derive from family
+records. Existing snapshots do not establish planned case totals, so those remain unknown.
+Usage counters retain independent known coverage; missing judgments, technical errors,
+unknown requests, truncation and redaction stay visible. There is no combined score.
+
+`Comparison` returns coherent source views, their typed results in matched identity/order,
+and one structured assessment. Public `compare` exposes counts and denominators directly.
+Full check content equality ignores list order for check compatibility, while a changed
+check sequence is a separate execution mismatch because Selector receives that order.
+Only a target-model change with all other execution settings equal is cross-model;
+other changes are incompatible. Equal pinned settings still have unknown remote revisions
+and do not establish paired generated inputs. Reports show labeled side-by-side counts,
+without numerical deltas or causal claims.
+
+`Repository.read_runs` reads selected IDs in one existing transaction and supplies one
+optional capture label. Single-run report reads use that same API. Preserve existing
+`read_run` capture defaults and equality behavior; direct unstamped views show unavailable
+capture time. Finding detail joins saved context coherently while retaining old Finding
+fields at their original JSON locations. Missing optional historical fields are valid
+unknown evidence; duplicate or impossible required lineage is a data-integrity error.
+
+Three fixed renderers consume the same result projection. JSON retains exact escaped
+source evidence. Markdown puts every untrusted value in indented literal blocks. HTML
+uses fixed escaped elements, inline SVG and restrictive CSP without scripts, links or
+remote resources. Terminal controls and bidi formatting become visible at human output
+boundaries. All formats retain source identity, coverage, limits, uncertainty and evidence.
+
+Publish through a persistent per-destination lock and private same-directory temporary
+file. Atomic hard-link creation enforces default no-clobber even against an external
+creator; explicit overwrite uses atomic replace. Refuse unsafe existing leaf entries,
+never follow the leaf, and remove only the invocation's own temporary file. Do not unlink
+shared locks. Prior bytes survive precommit failures; postcommit durability errors state
+that publication occurred. Guarantees assume a user-controlled local directory and actual
+filesystem support, to be proved on WSL and native Windows.
+
+Design comparison considered both a case-ledger projection and a semantic document tree.
+The case-ledger base keeps the stronger count model and smaller public surface, with the
+document candidate's direct comparison counts grafted in. Independent adversarial review
+clarified selected-but-unrun families, check-order mismatches and the existing summary-name
+collision before implementation. Final proof includes both installed wheels, public
+CLI/daemon/HTTPS/SQLite receipt counts, stopped repeated exports without provider calls or
+logical database mutations, publication contention/failure, an actual CommonMark renderer,
+and browser-visible known/empty/partial HTML counts with retained screenshots.
+
+Legacy implementation reconciliation. Existing accepted storage can save a work-item
+variant identity without a complete variant payload. Shared views expose deterministic
+legacy identity and saved request context. Reports keep unknown-kind legacy cases separate
+from attack/control denominators, and finding detail can have a nullable complete variant.
+This stable metadata preserves unchanged-read equality; `read_run` capture remains unset.
+
+Review reconciliation. Actual CommonMark parsing reproduced active markup from CR/CRLF in
+a raw family label. Literal blocks now normalize line endings and visibly encode controls;
+HTML family labels follow the same visible-control policy. Exact JSON strings are retained.
+Proof subprocesses use isolated Python imports and remove inherited Python path/home values;
+the installed driver asserts the actual child package path matches its checked package.
+Regressions cover CR, CRLF, ANSI/OSC/bidi family text and real CLI/daemon shadow packages.
+These corrections change reporting and proof code; execution and schema remain unchanged.
 
 ### Task 10: Real Groq and platform acceptance
 

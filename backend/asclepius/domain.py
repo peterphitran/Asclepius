@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, computed_field, model_validator
 
 PositiveInt = Annotated[int, Field(gt=0, strict=True)]
 NonNegativeInt = Annotated[int, Field(ge=0, strict=True)]
@@ -474,7 +474,16 @@ class RunProgress(Contract):
     generation_complete: bool = False
 
 
+class LegacyCaseIdentity(Contract):
+    work_item_id: UUID
+    variant_id: UUID
+    check_id: Identity
+    request: OperationRequest | None = None
+
+
 class RunView(Contract):
+    captured_at: UtcTime | None = None
+    legacy_cases: tuple[LegacyCaseIdentity, ...] = ()
     snapshot: RunSnapshot
     state: RunState
     cancel_requested: bool = False
@@ -487,11 +496,135 @@ class RunView(Contract):
     findings: tuple[Finding, ...] = ()
 
 
+class DeliveryCounts(Contract):
+    success: NonNegativeInt = 0
+    transport_error: NonNegativeInt = 0
+    unknown: NonNegativeInt = 0
+    unobserved: NonNegativeInt = 0
+
+
+class AttackCounts(Contract):
+    generated: NonNegativeInt = 0
+    judged: NonNegativeInt = 0
+    weakness: NonNegativeInt = 0
+    passed: NonNegativeInt = 0
+    inconclusive: NonNegativeInt = 0
+    verdict_unknown: NonNegativeInt = 0
+    missing_judgment: NonNegativeInt = 0
+    findings: NonNegativeInt = 0
+    delivery: DeliveryCounts = Field(default_factory=DeliveryCounts)
+
+
+class ControlCounts(Contract):
+    generated: NonNegativeInt = 0
+    judged: NonNegativeInt = 0
+    answered: NonNegativeInt = 0
+    over_refusal: NonNegativeInt = 0
+    inconclusive: NonNegativeInt = 0
+    outcome_unknown: NonNegativeInt = 0
+    missing_judgment: NonNegativeInt = 0
+    findings: NonNegativeInt = 0
+    delivery: DeliveryCounts = Field(default_factory=DeliveryCounts)
+
+
+class FamilyResults(Contract):
+    family: str
+    requested_checks: NonNegativeInt
+    generated_checks: NonNegativeInt
+    attacks: AttackCounts
+    controls: ControlCounts
+
+
+class UsageCoverage(Contract):
+    observations: NonNegativeInt
+    input_measured: NonNegativeInt
+    output_measured: NonNegativeInt
+    input_tokens: NonNegativeInt | None
+    output_tokens: NonNegativeInt | None
+    truncated: NonNegativeInt
+    redacted: NonNegativeInt
+    raw_bytes_measured: NonNegativeInt
+    raw_content_bytes: NonNegativeInt | None
+
+
+class ActorResults(Contract):
+    actor: str
+    success: NonNegativeInt
+    transport_error: NonNegativeInt
+    unknown: NonNegativeInt
+    usage: UsageCoverage
+
+
+class LegacyCaseCounts(Contract):
+    cases: NonNegativeInt
+    kind: Literal["unknown"] = "unknown"
+    judgments: NonNegativeInt
+    findings: NonNegativeInt
+    missing_judgment: NonNegativeInt
+    delivery: DeliveryCounts
+
+
+class RunResults(Contract):
+    run_id: UUID
+    captured_at: UtcTime | None
+    state: RunState
+    partial: bool
+    requested_checks: NonNegativeInt
+    generated_checks: NonNegativeInt
+    planned_cases: None = None
+    families: tuple[FamilyResults, ...]
+    legacy_unclassified: LegacyCaseCounts
+    attacks: AttackCounts
+    controls: ControlCounts
+    target_usage: UsageCoverage
+    evaluator_usage: UsageCoverage
+    evaluators: tuple[ActorResults, ...]
+    stage_attempts: tuple[StageAttempt, ...]
+
+
+class ComparisonAssessment(Contract):
+    relation: Literal["same_pinned_settings", "cross_model", "incompatible"]
+    checks_compatible: bool
+    differences: tuple[str, ...] = ()
+    remote_revision: Literal["unknown"] = "unknown"
+    generated_input_matching: Literal["not_established"] = "not_established"
+
+
 class Comparison(Contract):
     schema_version: Literal[1] = 1
     runs: Annotated[tuple[RunView, ...], Field(min_length=2)]
-    compatible: bool
-    differences: tuple[str, ...] = ()
+    summaries: Annotated[tuple[RunResults, ...], Field(min_length=2)]
+    assessment: ComparisonAssessment
+
+    @model_validator(mode="after")
+    def matching_runs(self) -> "Comparison":
+        if tuple(run.snapshot.id for run in self.runs) != tuple(
+            summary.run_id for summary in self.summaries
+        ):
+            raise ValueError("Comparison summaries must match source run order and identities.")
+        return self
+
+    @computed_field
+    @property
+    def compatible(self) -> bool:
+        return self.assessment.relation == "same_pinned_settings"
+
+    @computed_field
+    @property
+    def differences(self) -> tuple[str, ...]:
+        return self.assessment.differences
+
+
+class FindingDetail(Finding):
+    captured_at: UtcTime
+    snapshot: RunSnapshot
+    state: RunState
+    variant: Variant | None
+    legacy_case: LegacyCaseIdentity | None = None
+    observation: Observation
+    judgment: Judgment
+    check: CheckDefinition
+    stage_attempts: tuple[StageAttempt, ...]
 
 
 class ExportArtifact(Contract):

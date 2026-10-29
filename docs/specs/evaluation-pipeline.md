@@ -98,8 +98,9 @@ and technical failure through the public CLI, real daemon, verified loopback HTT
 SQLite. The [Task 8 record](../verification/evidence/cli-recovery.json) adds real process
 termination before dispatch, after target receipt, and after Reporter commit; manual restart
 preserves unknown intents and known evidence without replay. Explicit retry copies the
-saved snapshot under new identities and leaves source rows unchanged. Exports and live
-model accuracy remain later gates.
+saved snapshot under new identities and leaves source rows unchanged. The
+[Task 9 record](../verification/evidence/cli-results.json) verifies saved comparisons and
+JSON/Markdown/HTML exports without new provider calls. Live model accuracy remains Task 10.
 
 ## Design guidance
 

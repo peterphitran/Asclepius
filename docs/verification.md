@@ -11,7 +11,7 @@ disposable database/data directory, and instances you create for the check. Foll
 
 The CLI supports configuration, management, execution, cancellation, and manual recovery.
 Recorded checkpoints below distinguish verified journeys from remaining acceptance paths.
-Do not fabricate commands to mark unimplemented comparisons or exports passed.
+Distinguish saved-data comparison/export proof from live model or physical terminal acceptance.
 The [backend design](specs/backend-design.md) defines runtime acceptance requirements;
 the [pipeline design](specs/evaluation-pipeline.md) defines the agent-specific checks.
 The [RAG design](specs/rag-testing.md) adds capability-specific fixture, indexing,
@@ -194,6 +194,50 @@ and cleanup. Windows uses a dedicated watcher console guarded by exact process m
 WSL sends SIGINT to its watcher. Loopback HTTPS responses remain deterministic. Hosted Groq,
 semantic accuracy, physical keyboard/terminal close, sleep/shutdown, comparisons and exports
 remain later gates.
+
+## Recorded findings, comparisons, and exports
+
+The [Task 9 record](verification/evidence/cli-results.json) covers coherent multi-run
+SQLite reads, direct comparison counts, joined finding detail and cursor pagination,
+and JSON/Markdown/HTML reports. Attack and control judgments, delivery outcomes, missing
+judgments, and legacy unknown-kind cases have separate denominators. Selected but unrun
+families remain visible. Planned historical case counts and remote revisions are unknown.
+Check-order differences are execution mismatches; model-only changes are labeled cross-model.
+No combined score, paired-input claim, or numerical delta is produced.
+
+Final full suites passed 400 WSL tests and 397 native Windows tests with
+3 platform skips. Ruff passed. The existing Starlette HTTPX deprecation warning remains.
+The record retains the initial public CLI
+RED, focused legacy/publication regressions, actual review reports and corrections. Review
+reproduced and fixed carriage-return Markdown injection and isolated child CLI imports;
+CR/CRLF, terminal/bidi controls and shadow-package regressions cover those changes.
+
+Both installed `backend/scripts/verify_results.py` proofs run outside the checkout and use
+public CLI, real daemon, verified fixture HTTPS and SQLite. Full known-data evidence has
+60 attacks (1 weakness, 58 passes, 1 inconclusive), 20 answered controls, 80 target cases,
+and 182 observations. Smaller comparison/empty/partial scenarios are recorded separately.
+Stopped repeated findings/comparison/exports make no provider calls or logical database
+changes. Both final wheels' runtime/resource members match the frozen source.
+
+An independent markdown-it-py renderer with raw HTML enabled checks final Markdown under
+CommonMark and its default preset. Actual hostile scripts, links, and fences remain literal
+code, with no active markup. A real browser opens final complete/comparison/empty/partial
+HTML; visible text and SVG/table counts, DOM safety and network observations are retained
+with screenshots. This establishes fixture report behavior, not hosted semantic accuracy.
+Open the retained [complete](verification/evidence/cli-results-assets/completed-wsl.html),
+[empty](verification/evidence/cli-results-assets/empty-wsl.html),
+[partial](verification/evidence/cli-results-assets/partial-wsl.html), and
+[cross-model](verification/evidence/cli-results-assets/cross-model-wsl.html) reports.
+The [outcome screenshot](verification/evidence/cli-results-assets/completed-wsl.png) and
+[hostile-family screenshot](verification/evidence/cli-results-assets/hostile-family-wsl.png)
+record the visually inspected presentation.
+
+Publication checks exercise independent writers, an external creator, interrupted writes,
+unsafe leaves and cleanup. Atomic visibility is bounded to the tested local filesystems;
+Windows power-loss durability and hostile ancestor-directory replacement are not claimed.
+Native Windows skips the WSL-only mount case, POSIX directory fsync, and privileged symlink
+creation when unavailable.
+Live hosted-provider and physical terminal-close acceptance remain Task 10.
 
 ## Feature-map convention
 

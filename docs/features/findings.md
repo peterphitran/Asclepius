@@ -1,7 +1,8 @@
 # Findings
 
 Status: paginated saved-finding reads and full finding inspection are implemented.
-The evaluation pipeline that produces real findings is not implemented yet.
+The persisted pipeline produces findings. [Task 9](../verification/evidence/cli-results.json)
+verifies joined input/reply/judgment/check context and cursor reads on saved evidence.
 
 ## Sub-features
 
@@ -15,6 +16,8 @@ The evaluation pipeline that produces real findings is not implemented yet.
 Choose a run, inspect its findings, and open the evidence for a selected result.
 Use `findings list --run <run-id>` and `findings show <finding-id>`. These reads work
 while the daemon is stopped. Lists have the shared `--limit` and `--cursor` options.
+Detail retains the original Finding fields and adds saved context. Legacy cases with no
+variant payload remain visible with explicit unknown-kind context and saved request data.
 
 ## Driving it with the terminal
 

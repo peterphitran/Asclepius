@@ -97,6 +97,54 @@ its exact process membership. These checks use synthetic credentials and determi
 replies. The driver closes its servers, stops owned daemons, and removes temporary stores.
 Physical keyboard and terminal-close acceptance remain Task 10.
 
+## Compare and export saved evidence
+
+Use the same explicit `--data-dir` as submission. These commands work with the daemon
+stopped and do not require provider credentials:
+
+```text
+asclepius compare <run-a> <run-b> --json
+asclepius findings list --run <run-id> --limit 50
+asclepius findings show <finding-id> --json
+asclepius report <run-id> --format html --output <existing-directory>/run.html
+asclepius report <run-a> <run-b> --format markdown --output <existing-directory>/comparison.md
+asclepius report <run-id> --format json --output <existing-directory>/run.json
+```
+
+Comparison returns derived counts directly, alongside source views and a settings
+assessment. Same pinned settings, model-only changes, and incompatible settings have
+separate labels. Check content compatibility and execution check order are distinct.
+Remote revisions and generated input matching remain unestablished. Counts keep attacks,
+controls, delivery errors, missing judgments, and unknown-kind legacy cases separate.
+They do not become a combined score or numerical improvement claim.
+
+Reports refuse an existing destination by default. Add `--overwrite` explicitly. The
+writer requires an existing user-controlled local directory, serializes cooperating
+writers with a persistent sibling lock, and publishes a complete file atomically. It
+refuses unsafe existing destinations. Default publication also resists a creator that
+ignores the lock. A precommit failure preserves the previous file; a postcommit durability
+error states that the new file may already be present. Shared lock files remain in place.
+
+Reports include potentially sensitive saved prompts and replies. HTML and Markdown keep
+untrusted content inert; escaping does not make the evidence safe for public disclosure.
+JSON preserves exact escaped text. A live/partial report is a labeled read snapshot.
+Historical planned totals and absent usage counters remain unknown rather than zero.
+
+## Installed results proof
+
+After installing the final wheel, run outside the checkout with a new artifact directory:
+
+```text
+python <checkout>/backend/scripts/verify_results.py --certificates <checkout>/backend/tests/cli/fixtures --artifacts <owned-artifact-directory>
+```
+
+The driver asserts installed imports, creates isolated stores, and drives public CLI,
+detached daemon, verified loopback HTTPS and SQLite. It checks exact fixture counts,
+finding context, comparison labels, and repeated three-format exports with the daemon
+stopped. It verifies no provider calls or logical database changes during those reads.
+The driver stops owned daemons, closes servers, and removes temporary stores while
+retaining reports for browser inspection. Fixture replies and credentials are synthetic.
+
 ## Manage local profiles and inspect history
 
 From `backend/`, choose a separate local data directory for each operating system:

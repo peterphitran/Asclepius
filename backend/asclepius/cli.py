@@ -10,8 +10,10 @@ from asclepius import __version__
 from asclepius.checks import load_pack, load_pack_plan
 from asclepius.config import data_directory, load_evaluator, load_plan, load_target
 from asclepius.domain import AppError, RunState
+from asclepius.exports import render_report, safe_terminal, write_export
 from asclepius.maintenance import migrate_storage
 from asclepius.process import daemon_status, start_daemon, stop_daemon
+from asclepius.results import compare_runs
 from asclepius.services import EvaluationService
 from asclepius.storage import Repository
 
@@ -78,12 +80,13 @@ def parser() -> argparse.ArgumentParser:
     checks = commands.add_parser("checks", help="List built-in checks.")
     listing = checks.add_subparsers(dest="action", required=True).add_parser("list")
     listing.add_argument("--pack", required=True)
-    for name in (
-        "compare",
-        "report",
-    ):
-        command = commands.add_parser(name, help="Planned command; not implemented yet.")
-        command.add_argument("arguments", nargs=argparse.REMAINDER)
+    compare = commands.add_parser("compare", help="Compare saved run evidence.")
+    compare.add_argument("run_ids", nargs="+")
+    report = commands.add_parser("report", help="Export saved run evidence.")
+    report.add_argument("run_ids", nargs="+")
+    report.add_argument("--format", choices=("json", "markdown", "html"), required=True)
+    report.add_argument("--output", type=Path, required=True)
+    report.add_argument("--overwrite", action="store_true")
     return result
 
 
@@ -174,9 +177,19 @@ async def dispatch(options, json_output: bool) -> None:
                 options.run_id, limit=options.limit, cursor=options.cursor
             )
         else:
-            data = await repo.read_finding(options.finding_id)
-    else:
-        raise AppError("not_implemented", "This command is not implemented yet.")
+            data = await repo.read_finding_detail(options.finding_id)
+    elif command == "compare":
+        data = await compare_runs(repo, options.run_ids)
+    elif command == "report":
+        if len(options.run_ids) == 1:
+            source = (await repo.read_runs(options.run_ids))[0]
+        else:
+            source = await compare_runs(repo, options.run_ids)
+        artifact = render_report(source, options.format)
+        destination = await asyncio.to_thread(
+            write_export, artifact, options.output, options.overwrite
+        )
+        data = {"path": str(destination), "format": artifact.format, "written": True}
     emit(data, json_output)
 
 
@@ -222,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
         else:
-            print(str(error), file=sys.stderr)
+            print(safe_terminal(str(error)), file=sys.stderr)
         return error.exit_code
     except KeyboardInterrupt:
         return 130

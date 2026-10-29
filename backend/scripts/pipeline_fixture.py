@@ -28,21 +28,28 @@ class CliResult:
     payload: dict
 
 
-def cli_result(directory, *arguments, environment=None):
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "asclepius",
-            "--data-dir",
-            str(directory),
-            "--json",
-            *map(str, arguments),
-        ],
+def isolated_python(*arguments, environment=None):
+    child_environment = dict(os.environ if environment is None else environment)
+    child_environment.pop("PYTHONPATH", None)
+    child_environment.pop("PYTHONHOME", None)
+    return subprocess.run(
+        [sys.executable, "-I", *map(str, arguments)],
         capture_output=True,
         text=True,
         timeout=30,
-        env=environment if environment is not None else dict(os.environ, PIPELINE_KEY=KEY),
+        env=child_environment,
+    )
+
+
+def cli_result(directory, *arguments, environment=None):
+    result = isolated_python(
+        "-m",
+        "asclepius",
+        "--data-dir",
+        directory,
+        "--json",
+        *arguments,
+        environment=environment if environment is not None else dict(os.environ, PIPELINE_KEY=KEY),
     )
     assert KEY not in result.stdout + result.stderr
     payload = json.loads(result.stdout)

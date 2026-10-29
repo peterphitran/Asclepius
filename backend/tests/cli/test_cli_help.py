@@ -19,12 +19,12 @@ def test_module_help_does_not_need_api_database_or_credentials() -> None:
     assert "report" in result.stdout
 
 
-def test_unimplemented_command_does_not_claim_success() -> None:
+def test_report_requires_format_and_destination() -> None:
     result = run_cli("report", "unused-run", "--json")
-    assert result.returncode == 5
+    assert result.returncode == 2
     output = json.loads(result.stdout)
     assert output["schema_version"] == 1
-    assert output["error"]["code"] == "not_implemented"
+    assert output["error"]["code"] == "arguments"
 
 
 def test_bad_arguments_exit_two_without_traceback() -> None:
