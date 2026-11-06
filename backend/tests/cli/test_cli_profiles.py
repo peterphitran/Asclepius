@@ -7,7 +7,7 @@ import sys
 import pytest
 
 from asclepius.storage import Repository
-from tests.cli.storage_fixtures import OWNER, run
+from tests.cli.storage_fixtures import ready, run
 from tests.cli.test_services import prompts
 
 
@@ -103,7 +103,7 @@ def test_cli_submission_stopped_then_controlled_ready_then_cancel_and_retry(tmp_
     assert json.loads(stopped.stdout)["error"]["code"] == "daemon_unavailable"
     repo = Repository(directory)
     assert run(repo.list_runs()).items == ()
-    run(repo.set_ready(OWNER))
+    run(ready(repo))
     accepted = cli(directory, *args, env=env)
     assert accepted.returncode == 0, accepted.stdout + accepted.stderr
     identity = json.loads(accepted.stdout)["data"]["id"]
@@ -116,7 +116,7 @@ def test_cli_submission_stopped_then_controlled_ready_then_cancel_and_retry(tmp_
     assert terminal_watch.returncode == 0
     records = [json.loads(line) for line in terminal_watch.stdout.splitlines()]
     assert records[-1]["data"]["state"] == "cancelled"
-    run(repo.set_ready(OWNER))
+    run(ready(repo))
     retried = cli(directory, "runs", "retry", identity, env=env)
     assert retried.returncode == 0, retried.stdout + retried.stderr
     retry_id = json.loads(retried.stdout)["data"]["id"]

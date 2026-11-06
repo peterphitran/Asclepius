@@ -179,10 +179,10 @@ the coordinator checks it before dispatching more work.
 
 ## Submit a complete plan
 
-Submission requires a fresh persisted ready record from a manually started daemon. Stopped,
-draining, or stale readiness returns exit 4 without inserting a run. A hard crash can leave
-that record fresh for up to ten seconds, during which queued acceptance can still succeed.
-That work waits for a manual restart; submission is not a synchronous OS-liveness guarantee.
+Submission requires a ready record, a heartbeat no more than ten elapsed seconds old, and
+the current daemon generation holding both instance and readiness locks. Stopped, draining,
+stale, or released ownership returns exit 4 without inserting a run. Work already queued
+before a crash waits for a manual restart.
 Do not modify the database to manufacture readiness.
 The daemon claims accepted work within runtime and pinned active-run bounds. Its status
 reports execution capability for the actual owning generation. Starting the daemon remains
@@ -245,7 +245,11 @@ Start is always explicit. The child detaches with redirected streams; duplicate 
 identify the existing owner. Status reports persisted identity/PID, OS ownership, heartbeat
 responsiveness, and execution availability separately. PID alone is not ownership.
 A generation-specific readiness lock prevents a restarted child from borrowing an old
-instance's ready record while waiting on SQLite.
+instance's ready record while waiting on SQLite. Heartbeat and run deadlines use an elapsed
+clock; their UTC timestamps remain actual event labels and may move backward. Linux uses
+`CLOCK_BOOTTIME`; native Windows uses `GetTickCount64` with millisecond resolution. Both
+include suspension by platform contract. Physical Windows host sleep advancing WSL's guest
+clock has not been measured. Expired work is rejected on the next awake checkpoint.
 
 Stop records drain intent, rejects new submissions/claims, and waits for active work owned
 by that instance. A timeout reports `daemon_draining` without killing it. Queued work remains
@@ -263,15 +267,16 @@ belongs under Linux storage such as `/tmp`, not the Windows checkout.
 
 ## Upgrade existing local storage
 
-New stores use SQLite schema version 3. Existing version-1 and version-2 stores require an explicit,
+New stores use SQLite schema version 4. Existing version-1, version-2, and version-3 stores require an explicit,
 stopped upgrade before reads or daemon start:
 
 ```text
 asclepius --data-dir <local-directory> storage migrate --json
 ```
 
-Migration acquires exclusive instance and maintenance locks. It adds PID diagnostics and
-preserves saved profiles/runs. Unsupported versions fail without reset. `init` never upgrades
+Migration acquires exclusive instance and maintenance locks. It adds private elapsed samples
+without inventing ticks for historical rows and preserves saved profiles, runs, and observations.
+Unsupported versions fail without reset. `init` never upgrades
 an existing store, and ordinary commands do not migrate implicitly. JSON output envelopes
 still use schema version 1; that is separate from the SQLite schema version.
 

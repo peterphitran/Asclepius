@@ -10,9 +10,10 @@ import portalocker
 from asclepius.config import DaemonConfig
 from asclepius.coordinator import Coordinator
 from asclepius.domain import AppError
+from asclepius.elapsed_clock import elapsed_clock
 from asclepius.limits import BudgetManager
 from asclepius.maintenance import instance_lock, maintenance_lock, readiness_lock
-from asclepius.storage import Repository
+from asclepius.storage import ReadyHeartbeatExpired, Repository
 from asclepius.transport import JsonTransport
 
 
@@ -35,12 +36,29 @@ async def serve(data_dir: Path, *, instance_id: str, policy: DaemonConfig | None
             try:
                 await repo.control()
                 await repo.set_ready(instance_id, pid=os.getpid(), execution_available=True)
-                await repo.interrupt_orphans(instance_id)
-                last_heartbeat = 0.0
+                last_heartbeat = 0
                 while True:
                     control = await repo.control()
                     if str(control.instance_id) != instance_id:
                         raise AppError("ownership", "Daemon ownership changed.")
+                    if control.state == "draining":
+                        break
+                    try:
+                        await repo.interrupt_orphans(instance_id)
+                        break
+                    except ReadyHeartbeatExpired:
+                        now = elapsed_clock.ns()
+                        await repo.heartbeat(instance_id)
+                        last_heartbeat = now
+                        await asyncio.sleep(0.25)
+                while True:
+                    control = await repo.control()
+                    if str(control.instance_id) != instance_id:
+                        raise AppError("ownership", "Daemon ownership changed.")
+                    now = elapsed_clock.ns()
+                    if now - last_heartbeat >= 2_000_000_000:
+                        await repo.heartbeat(instance_id)
+                        last_heartbeat = now
                     for identity, task in tuple(tasks.items()):
                         if task.done():
                             del tasks[identity]
@@ -50,34 +68,36 @@ async def serve(data_dir: Path, *, instance_id: str, policy: DaemonConfig | None
                                 failure = error
                                 await repo.request_stop(instance_id)
                     if failure is None and control.state == "ready":
-                        while len(tasks) < policy.limits.active_runs:
-                            try:
+                        try:
+                            while len(tasks) < policy.limits.active_runs:
                                 snapshot = await repo.claim_next(instance_id, limits=policy.limits)
-                            except AppError as error:
-                                if error.code != "daemon_unavailable":
-                                    raise
-                                current = await repo.control()
-                                if (
-                                    str(current.instance_id) == instance_id
-                                    and current.state == "draining"
-                                ):
-                                    control = current
+                                if snapshot is None:
                                     break
+                                tasks[str(snapshot.id)] = asyncio.create_task(
+                                    coordinator.execute(snapshot)
+                                )
+                        except ReadyHeartbeatExpired:
+                            now = elapsed_clock.ns()
+                            await repo.heartbeat(instance_id)
+                            last_heartbeat = now
+                            await asyncio.sleep(0.25)
+                            continue
+                        except AppError as error:
+                            if error.code != "daemon_unavailable":
                                 raise
-                            if snapshot is None:
-                                break
-                            tasks[str(snapshot.id)] = asyncio.create_task(
-                                coordinator.execute(snapshot)
-                            )
+                            current = await repo.control()
+                            if (
+                                str(current.instance_id) == instance_id
+                                and current.state == "draining"
+                            ):
+                                control = current
+                            else:
+                                raise
                     if (control.state == "draining" or failure is not None) and not tasks:
                         if failure is not None:
                             raise failure
                         if await repo.active_count(instance_id) == 0:
                             break
-                    now = asyncio.get_running_loop().time()
-                    if now - last_heartbeat >= 2:
-                        await repo.heartbeat(instance_id)
-                        last_heartbeat = now
                     await asyncio.sleep(0.25)
             finally:
                 if tasks:

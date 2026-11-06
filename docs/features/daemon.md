@@ -8,7 +8,7 @@ sleep/shutdown, and hosted-provider acceptance remain Task 10.
 
 ## Sub-features
 
-- `daemon-start`: start an instance that survives terminal closure.
+- `daemon-start`: start a detached instance.
 - `daemon-status`: report instance readiness and identity.
 - `daemon-stop`: stop the service deliberately.
 - `daemon-bounds`: enforce configured concurrency.
@@ -20,8 +20,8 @@ Start the daemon before submitting runs and stop it when finished. The
 [backend design](../specs/backend-design.md) defines one instance per data directory,
 readiness before acceptance, and graceful stop by draining active work. Submission
 with stopped/draining/stale control fails without creating a run; repeated start identifies
-the existing instance. Abrupt loss can leave up to ten seconds of fresh persisted readiness,
-so submission may still accept queued work that waits for manual restart.
+the existing instance. After abrupt loss releases the ownership locks, submission refuses
+new work. Runs already queued remain available for manual restart.
 Use `daemon start`, `daemon status`, and `daemon stop --timeout <seconds>` with the shared
 `--data-dir`. Ready status includes `execution_available: true`; the coordinator claims
 queued runs within configured limits. A timed-out stop reports draining under the same
@@ -40,6 +40,11 @@ that incomplete runs are marked interrupted, while queued runs remain available.
 - Computer sleep and shutdown interrupt computation.
 - A startup message alone does not prove a usable worker.
 - A stale heartbeat alone cannot prove that instance ownership has been released.
+- Enqueue and claim require the current generation's held locks and an elapsed heartbeat
+  no more than ten seconds old. A released owner cannot admit new work after a crash.
+  If a pause expires its own ready heartbeat, the daemon renews under its generation
+  fence and rereads control before retrying refused startup recovery or claiming work.
+  Clients remain refused during the stall; accepted work and provider calls are not replayed.
 - Readiness requires both lifetime instance ownership and the current UUID's readiness
   lock. PID and a fresh old row cannot establish a new child's readiness.
 - A timed-out stop never kills the process. A startup timeout may leave a child starting;

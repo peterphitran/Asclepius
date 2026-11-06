@@ -190,12 +190,13 @@ def test_early_child_exit_returns_sanitized_start_failure(tmp_path, monkeypatch)
     assert len(list((tmp_path / "logs").glob("daemon-*.log"))) == 1
 
 
-def test_restart_waiting_on_sqlite_does_not_make_old_ready_generation_live(tmp_path):
+def test_restart_waiting_on_sqlite_does_not_make_old_ready_generation_live(tmp_path, monkeypatch):
     import threading
 
     import portalocker
 
-    from asclepius.maintenance import instance_lock
+    import asclepius.process as process
+    from asclepius.maintenance import readiness_lock
 
     repo = Repository(tmp_path)
     run(repo.initialize())
@@ -203,6 +204,18 @@ def test_restart_waiting_on_sqlite_does_not_make_old_ready_generation_live(tmp_p
     run(repo.set_ready(old_id, pid=os.getpid()))
     first_result = []
     first_error = []
+    launched = threading.Event()
+    children = []
+    original_popen = process.subprocess.Popen
+
+    def record_child(arguments, **options):
+        child = original_popen(arguments, **options)
+        if threading.current_thread() is thread:
+            children.append((arguments[arguments.index("--instance-id") + 1], child))
+            launched.set()
+        return child
+
+    monkeypatch.setattr(process.subprocess, "Popen", record_child)
 
     def start_first():
         try:
@@ -216,17 +229,21 @@ def test_restart_waiting_on_sqlite_does_not_make_old_ready_generation_live(tmp_p
             connection.execute("BEGIN IMMEDIATE")
             thread.start()
             try:
+                assert launched.wait(10)
+                child_id, child = children[0]
+                assert child_id != old_id
                 deadline = time.monotonic() + 10
-                owned = False
+                child_ready_lock_held = False
                 while time.monotonic() < deadline:
                     try:
-                        with instance_lock(tmp_path):
+                        with readiness_lock(tmp_path, child_id):
                             pass
                     except portalocker.LockException:
-                        owned = True
+                        child_ready_lock_held = True
                         break
                     time.sleep(0.02)
-                assert owned
+                assert child_ready_lock_held
+                assert child.poll() is None
                 with pytest.raises(AppError) as error:
                     start_daemon(tmp_path, timeout=0.1)
                 assert error.value.code == "daemon_unresponsive"

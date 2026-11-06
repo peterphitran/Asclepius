@@ -32,7 +32,7 @@ discarding the original removal work.
 | Provider components | `backend/asclepius/transport.py`, `adapters/chat.py`, `models.py` | Bounded HTTPS, independent credentials, redacted immutable requests, strict evaluator schemas, typed errors and validated retry timing. No automatic retries; coordinator persists their evidence. |
 | Saved results and exports | `backend/asclepius/results.py`, `exports.py` | Coherent comparison summaries, separate attack/control/legacy outcomes, inert JSON/Markdown/HTML and atomic local publication. |
 | Checks and agents | `backend/asclepius/checks.py`, `agents.py`, `packs/`, `prompts/` | Twenty pinned checks, three generated attacks and one code-owned control per check. Four role contracts require an injected prepared-request dispatch. Coordinator supplies durable dispatch. |
-| Local migrations | `backend/asclepius/maintenance.py`, `migrations/` | New schema v3 and explicit stopped v1/v2 upgrade, OS/maintenance locking, rollback, and local-only path policy. |
+| Local migrations | `backend/asclepius/maintenance.py`, `migrations/` | New schema v4 and explicit stopped v1/v2/v3 upgrade, OS/maintenance locking, rollback, and local-only path policy. |
 | API | `backend/app/api/` | Auth, target, campaign, sweep, finding, review, summary, and health routes. |
 | Data | `backend/app/models/`, `backend/app/db.py` | Organization-scoped Postgres records through async SQLAlchemy. |
 | Migrations | `backend/alembic/` | Inherited Postgres revisions; current database revision is not verified. |
@@ -61,8 +61,8 @@ queued and active cancellation, drain timeout, watcher OS interruption, three pr
 boundaries, manual recovery, and linked retry through public CLI subprocesses, detached
 daemons, HTTPS fixtures, and SQLite on WSL and native Windows. Task 7 proves normal
 execution. Deterministic fixture judgments do not establish live model accuracy.
-Submission's fresh-heartbeat gate permits up to ten seconds of queued acceptance after a
-hard crash; OS-liveness probes protect status/start, not the enqueue transaction.
+Submission requires a fresh elapsed heartbeat and both live generation locks inside the
+enqueue transaction. Released ownership rejects new queue work after a hard crash.
 Physical terminal-close acceptance remains pending. One native creator-exit test failed
 during review, then passed reruns and ten extra probes; its cause remains unresolved.
 

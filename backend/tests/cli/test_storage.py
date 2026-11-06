@@ -23,7 +23,7 @@ from asclepius.domain import (
     Variant,
 )
 from asclepius.storage import Repository
-from tests.cli.storage_fixtures import OWNER, make_snapshot, prepare, run
+from tests.cli.storage_fixtures import OWNER, REPLACEMENT, make_snapshot, prepare, ready, run
 
 
 def selection(rationale="requested check"):
@@ -37,9 +37,12 @@ def selection(rationale="requested check"):
 
 
 def test_initialization_is_repeatable_and_schema_version_is_checked(tmp_path):
+    from tests.cli.storage_fixtures import release_leases
+
     async def scenario():
         repo, snapshot, _ = await prepare(tmp_path)
         before = await repo.events(str(snapshot.id))
+        release_leases()
         await repo.initialize()
         assert await repo.events(str(snapshot.id)) == before
         with sqlite3.connect(repo.database_path) as connection:
@@ -401,7 +404,7 @@ def test_stale_owner_is_fenced_from_new_operations_observations_and_finalization
             error_code="timeout",
             started_at=datetime.now(UTC),
         )
-        await repo.set_ready("new-owner")
+        await ready(repo, REPLACEMENT)
         actions = [
             repo.begin_operation(request.model_copy(update={"id": uuid4()}), instance_id=OWNER),
             repo.save_observation(observation, instance_id=OWNER),
@@ -412,7 +415,7 @@ def test_stale_owner_is_fenced_from_new_operations_observations_and_finalization
                 await action
             assert error.value.code == "ownership"
         assert (await repo.read_run(str(snapshot.id))).state == RunState.RUNNING
-        assert await repo.interrupt_orphans("new-owner") == [str(snapshot.id)]
+        assert await repo.interrupt_orphans(REPLACEMENT) == [str(snapshot.id)]
 
     run(scenario())
 
@@ -426,18 +429,18 @@ def test_recovery_rolls_back_observations_and_state_when_event_fails(tmp_path):
             payload=ChatInput(messages=(Message(role="user", content="pending"),)),
         )
         await repo.begin_operation(request, instance_id=OWNER)
-        await repo.set_ready("new-owner")
+        await ready(repo, REPLACEMENT)
         with sqlite3.connect(repo.database_path) as connection:
             connection.execute("""CREATE TRIGGER reject_recovery BEFORE INSERT ON events
                 WHEN NEW.kind='run.finalized' BEGIN SELECT RAISE(ABORT, 'fixture'); END""")
         with pytest.raises(AppError):
-            await repo.interrupt_orphans("new-owner")
+            await repo.interrupt_orphans(REPLACEMENT)
         view = await repo.read_run(str(snapshot.id))
         assert view.state == RunState.RUNNING
         assert view.observations == ()
         with sqlite3.connect(repo.database_path) as connection:
             connection.execute("DROP TRIGGER reject_recovery")
-        assert await repo.interrupt_orphans("new-owner") == [str(snapshot.id)]
+        assert await repo.interrupt_orphans(REPLACEMENT) == [str(snapshot.id)]
         assert (await repo.read_run(str(snapshot.id))).observations[0].status == "unknown"
 
     run(scenario())
@@ -455,14 +458,14 @@ def test_stale_worker_cannot_write_and_crash_does_not_replay(tmp_path):
         with pytest.raises(AppError) as error:
             await repo.finalize(str(snapshot.id), RunState.COMPLETED, None, instance_id=OWNER)
         assert error.value.code == "inflight"
-        await repo.set_ready("new-owner")
+        await ready(repo, REPLACEMENT)
         with pytest.raises(AppError) as error:
             await repo.commit_stage(
                 str(snapshot.id), work_id, "selector", selection(), instance_id=OWNER
             )
         assert error.value.code == "ownership"
-        assert await repo.interrupt_orphans("new-owner") == [str(snapshot.id)]
-        assert await repo.interrupt_orphans("new-owner") == []
+        assert await repo.interrupt_orphans(REPLACEMENT) == [str(snapshot.id)]
+        assert await repo.interrupt_orphans(REPLACEMENT) == []
         view = await repo.read_run(str(snapshot.id))
         assert view.state == RunState.INTERRUPTED
         assert {item.operation_id: item.status for item in view.observations} == {
@@ -473,7 +476,7 @@ def test_stale_worker_cannot_write_and_crash_does_not_replay(tmp_path):
         repeated = await repo.begin_operation(pending, instance_id=OWNER)
         assert repeated.created is False
         assert repeated.status == "unknown"
-        assert await repo.claim_next("new-owner") is None
+        assert await repo.claim_next(REPLACEMENT) is None
 
     run(scenario())
 
@@ -486,7 +489,7 @@ def test_enqueue_requires_fresh_ready_control_and_preserves_accepted_identity(tm
         assert len(await repo.events(str(snapshot.id))) == count
         new_snapshot = make_snapshot(str(snapshot.profile_id), snapshot.profile)
         with sqlite3.connect(repo.database_path) as connection:
-            connection.execute("UPDATE daemon_control SET heartbeat_at='2000-01-01T00:00:00+00:00'")
+            connection.execute("UPDATE daemon_control SET heartbeat_tick_ns=0")
         with pytest.raises(AppError) as error:
             await repo.enqueue(new_snapshot)
         assert error.value.exit_code == 4

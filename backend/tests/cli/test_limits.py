@@ -9,7 +9,7 @@ import pytest
 
 from asclepius.domain import AppError, Limits, RunState
 from asclepius.limits import BudgetManager, resource_identity
-from tests.cli.storage_fixtures import OWNER, prepare, run
+from tests.cli.storage_fixtures import OWNER, REPLACEMENT, prepare, ready, run
 
 
 def test_durable_reservations_do_not_refund_dispatched_or_settled_calls(tmp_path):
@@ -257,21 +257,34 @@ def test_destination_identity_normalizes_dns_trailing_dot_default_port_and_wire_
     )
 
 
-def test_run_deadline_and_stale_owner_reject_dispatch_not_settlement(tmp_path):
+def test_run_deadline_and_stale_owner_reject_dispatch_not_settlement(tmp_path, monkeypatch):
     async def scenario():
         repo, snapshot, _ = await prepare(tmp_path)
         manager = BudgetManager(repo, OWNER)
         reservation = await manager.reserve(str(snapshot.id), "target", 4)
         await manager.dispatch(reservation)
         pending = await manager.reserve(str(snapshot.id), "target", 4)
+        from asclepius.elapsed_clock import Tick, elapsed_clock
+
+        current = elapsed_clock.sample()
+
         with sqlite3.connect(repo.database_path) as connection:
-            connection.execute("UPDATE runs SET started_at='2000-01-01T00:00:00+00:00'")
+            connection.execute(
+                "UPDATE runs SET started_tick_ns=?",
+                (current.ns,),
+            )
+        monkeypatch.setattr(
+            elapsed_clock,
+            "sample",
+            lambda: Tick(current.source, current.ns + 2_700_000_000_000),
+        )
         with pytest.raises(AppError) as error:
             await manager.dispatch(pending)
         assert error.value.code == "run_timeout"
+        monkeypatch.setattr(elapsed_clock, "sample", lambda: current)
         await manager.settle(reservation)
         await manager.release(pending)
-        await repo.set_ready("replacement")
+        await ready(repo, REPLACEMENT)
         with pytest.raises(AppError) as error:
             await manager.reserve(str(snapshot.id), "target", 4)
         assert error.value.code == "ownership"
@@ -309,7 +322,7 @@ def test_runtime_policy_caps_each_run_allowance_in_storage(tmp_path, runtime):
 
 
 def test_runtime_deadline_is_checked_before_dispatch_authorization(tmp_path):
-    from datetime import UTC, datetime, timedelta
+    from asclepius.elapsed_clock import elapsed_clock
 
     async def scenario():
         repo, snapshot, _ = await prepare(tmp_path)
@@ -317,8 +330,8 @@ def test_runtime_deadline_is_checked_before_dispatch_authorization(tmp_path):
         reservation = await manager.reserve(str(snapshot.id), "target", 20)
         with sqlite3.connect(repo.database_path) as connection:
             connection.execute(
-                "UPDATE runs SET started_at=?",
-                ((datetime.now(UTC) - timedelta(seconds=2)).isoformat(),),
+                "UPDATE runs SET started_tick_ns=?",
+                (elapsed_clock.sample().ns - 2_000_000_000,),
             )
         with pytest.raises(AppError) as error:
             await manager.dispatch(reservation)

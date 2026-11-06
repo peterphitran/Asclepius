@@ -3,6 +3,7 @@ import pytest
 from asclepius.checks import load_pack, load_pack_plan
 from asclepius.cli import main
 from asclepius.domain import AppError
+from tests.cli.storage_fixtures import ready
 
 
 def test_pack_complete():
@@ -107,7 +108,7 @@ def test_pack_queue_uses_pinned_plan(tmp_path, monkeypatch, capsys):
                 target=TargetConfig(name="target", model="target", secret_ref="env:CLI_TEST_KEY")
             )
         )
-        await repo.set_ready("test-owner")
+        await ready(repo, "00000000-0000-4000-8000-000000000001")
         return repo
 
     repo = asyncio.run(setup())

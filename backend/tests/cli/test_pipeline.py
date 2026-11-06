@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from asclepius.domain import AppError, RunState, SelectionOutput
-from tests.cli.storage_fixtures import OWNER, prepare
+from tests.cli.storage_fixtures import OWNER, REPLACEMENT, prepare, ready
 
 
 @pytest.mark.parametrize("committed", [True, False])
@@ -291,8 +291,8 @@ def test_orphan_interruption_closes_pending_attempt_without_claiming_completion(
     async def scenario():
         repo, snapshot, work = await prepare(tmp_path)
         await repo.begin_stage(str(snapshot.id), work, "selector", instance_id=OWNER)
-        await repo.set_ready("replacement-owner")
-        assert await repo.interrupt_orphans("replacement-owner") == [str(snapshot.id)]
+        await ready(repo, REPLACEMENT)
+        assert await repo.interrupt_orphans(REPLACEMENT) == [str(snapshot.id)]
         view = await repo.read_run(str(snapshot.id))
         assert view.state == RunState.INTERRUPTED
         assert view.attempts[0].state == "failed"

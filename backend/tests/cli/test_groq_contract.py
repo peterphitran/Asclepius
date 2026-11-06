@@ -27,7 +27,7 @@ from asclepius.limits import BudgetManager
 from asclepius.models import ModelGateway, strict_schema
 from asclepius.storage import Repository
 from asclepius.transport import JsonTransport
-from tests.cli.storage_fixtures import OWNER, make_snapshot
+from tests.cli.storage_fixtures import OWNER, make_snapshot, ready
 from tests.cli.test_transport import provider as provider
 
 
@@ -100,7 +100,7 @@ async def setup(groq, tmp_path, monkeypatch, *, legacy_case=False, **limits):
             ),
         }
     )
-    await repo.set_ready(OWNER)
+    await ready(repo)
     await repo.enqueue(snapshot)
     await repo.claim_next(OWNER)
     work_id = uuid4()

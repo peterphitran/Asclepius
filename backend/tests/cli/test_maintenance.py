@@ -52,8 +52,8 @@ def test_explicit_v1_migration_preserves_existing_records(tmp_path):
     with pytest.raises(AppError) as error:
         run(repo.initialize())
     assert error.value.code == "schema_version"
-    assert migrate_storage(tmp_path) == 3
-    assert migrate_storage(tmp_path) == 3
+    assert migrate_storage(tmp_path) == 4
+    assert migrate_storage(tmp_path) == 4
     with closing(sqlite3.connect(repo.database_path)) as connection:
         assert connection.execute("SELECT id FROM profiles").fetchall() == [(profile_id,)]
         assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
@@ -266,7 +266,7 @@ def test_v2_upgrade_preserves_data_and_defaults_execution_capability_false(tmp_p
         connection.execute("UPDATE daemon_control SET instance_id=?,state='stopped'", (old_owner,))
         connection.execute("PRAGMA user_version=2")
         connection.commit()
-    assert migrate_storage(tmp_path) == 3
+    assert migrate_storage(tmp_path) == 4
     control = run(repo.control())
     assert str(control.instance_id) == old_owner
     assert control.execution_available is False

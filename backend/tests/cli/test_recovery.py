@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from scripts.recovery_fixture import crash_scenario
+from tests.cli.storage_fixtures import REPLACEMENT, ready
 
 CERTIFICATES = Path(__file__).parent / "fixtures"
 
@@ -27,8 +28,8 @@ def test_stale_owner_cannot_append_new_run_or_overwrite_recovered_evidence(tmp_p
             payload=ChatInput(messages=(Message(role="user", content="uncertain"),)),
         )
         await repo.begin_operation(request, instance_id=OWNER)
-        replacement = "new-owner"
-        await repo.set_ready(replacement)
+        replacement = REPLACEMENT
+        await ready(repo, replacement)
         await repo.interrupt_orphans(replacement)
         source_before = await repo.read_run(str(source.id))
         new = source.model_copy(update={"id": uuid4(), "source_run_id": source.id})

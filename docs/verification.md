@@ -104,9 +104,9 @@ probes. That unexplained failure remains recorded. Physical terminal-close, slee
 real provider calls, and scheduler/recovery integration are not proved by Task 4.
 At the Task 4 checkpoint the daemon reported `execution_available: false` and did not
 dispatch queued runs.
-Submission uses persisted heartbeat freshness, so abrupt owner loss can leave up to ten
-seconds of queued acceptance before the record becomes stale. Status/start use the OS
-generation lease; enqueue is not an immediate crash detector.
+Submission checks the persisted elapsed heartbeat and the live generation locks inside its
+transaction. Abrupt owner loss rejects new queue work once the locks release. Previously
+queued work remains for normal recovery.
 
 ## Recorded Groq provider components
 
@@ -254,6 +254,26 @@ The installed component proof checks the same identity distinction on Linux and 
 Windows. It uses deterministic replies and two HTTPS requests per platform. It does not prove
 queued CLI execution, hosted Groq behavior, semantic accuracy, or terminal-close survival.
 Task 10 remains incomplete. Opt-in live tests and owned terminal scenarios are still pending.
+
+## Clock correction prerequisite
+
+The [clock evidence record](verification/evidence/cli-clock-correction.json) retains the
+received-reply UTC reversal failure and the correction. Actual UTC labels can reverse;
+private elapsed samples govern readiness and run deadlines. A precisely classified expired
+heartbeat lets the same live owner renew and resume its control loop. Other ownership,
+clock and storage failures remain errors. Existing stores require explicit stopped migration
+to schema 4.
+
+The final suites pass 487 CLI tests on WSL and 484 on native Windows, with three platform
+skips. Three API compatibility tests also pass. Installed proof on both platforms preserves
+reversed target and evaluator samples through verified HTTPS, storage and all three exports.
+All 31 package members match source and wheel bytes. Explicit migration preserves all old
+stored values in a stopped fixture containing two completed runs and 364 observations.
+
+Earlier failed runs and the review-discovered pause window remain in the record. One native
+reply fixture timed out across a one-hour interval; its physical cause is unproven. Physical
+host sleep, real Groq execution and terminal application closure remain unverified. This
+runtime prerequisite does not complete Task 10.
 
 ## Feature-map convention
 

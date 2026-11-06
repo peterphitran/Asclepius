@@ -290,9 +290,6 @@ class Observation(Contract):
     def validate_outcome(self) -> "Observation":
         if self.started_at.tzinfo is None:
             raise ValueError("Observation timestamps require a timezone.")
-        if self.finished_at is not None:
-            if self.finished_at.tzinfo is None or self.finished_at < self.started_at:
-                raise ValueError("Observation finish time must follow its start time.")
         if self.status == "success":
             if self.payload is None or self.error_code is not None or self.finished_at is None:
                 raise ValueError("Successful observations require a reply and finish time.")

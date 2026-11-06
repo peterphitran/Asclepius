@@ -7,13 +7,16 @@ import sys
 import tempfile
 import threading
 from contextlib import closing
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 
 import asclepius
+from asclepius.adapters import chat
 from asclepius.adapters.chat import ChatAdapter, GroqConnection
 from asclepius.domain import (
     ChatInput,
@@ -28,6 +31,7 @@ from asclepius.domain import (
 )
 from asclepius.exports import render_report
 from asclepius.limits import BudgetManager
+from asclepius.maintenance import instance_lock, readiness_lock
 from asclepius.models import ModelGateway
 from asclepius.storage import Repository
 from asclepius.transport import JsonTransport
@@ -115,36 +119,58 @@ async def prove(data_dir, server, transport):
             PromptSnapshot(role=role, version="1", content=role + " policy") for role in roles
         ),
     )
-    owner = "installed-proof"
-    await repo.set_ready(owner)
-    await repo.enqueue(snapshot)
-    await repo.claim_next(owner)
-    work = uuid4()
-    await repo.register_work_item(
-        str(snapshot.id), str(work), "proof", variant_id=str(uuid4()), instance_id=owner
-    )
-    connection = GroqConnection(snapshot, BudgetManager(repo, owner), transport=transport)
-    target = ChatAdapter(connection)
-    call = target.prepare(
-        OperationRequest(
-            run_id=snapshot.id,
-            work_item_id=work,
-            payload=ChatInput(messages=(Message(role="user", content="synthetic-canary"),)),
+    owner = str(uuid4())
+    base = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    samples = iter(
+        (
+            base,
+            base - timedelta(seconds=2),
+            base + timedelta(minutes=1),
+            base + timedelta(minutes=1, seconds=-2),
         )
     )
-    assert (await repo.begin_operation(call.request, instance_id=owner)).created
-    observation = await target.execute_prepared(call)
-    assert observation.status == "success"
-    assert observation.payload.content == "synthetic-canary"
-    await repo.save_observation(observation, instance_id=owner)
-    gateway = ModelGateway(connection, work_item_id=work)
-    evaluation = gateway.prepare("judge", {"observation": "synthetic-canary"}, Answer)
-    assert (await repo.begin_operation(evaluation.call.request, instance_id=owner)).created
-    result = await gateway.execute(evaluation)
-    assert result.output == Answer(verdict="pass")
-    await repo.save_observation(result.observation, instance_id=owner)
+
+    class ReversedUTC:
+        @staticmethod
+        def now(_zone):
+            return next(samples)
+
+    with instance_lock(repo.data_dir), readiness_lock(repo.data_dir, owner):
+        await repo.set_ready(owner)
+        await repo.enqueue(snapshot)
+        await repo.claim_next(owner)
+        work = uuid4()
+        await repo.register_work_item(
+            str(snapshot.id), str(work), "proof", variant_id=str(uuid4()), instance_id=owner
+        )
+        connection = GroqConnection(snapshot, BudgetManager(repo, owner), transport=transport)
+        target = ChatAdapter(connection)
+        call = target.prepare(
+            OperationRequest(
+                run_id=snapshot.id,
+                work_item_id=work,
+                payload=ChatInput(messages=(Message(role="user", content="synthetic-canary"),)),
+            )
+        )
+        assert (await repo.begin_operation(call.request, instance_id=owner)).created
+        with patch.object(chat, "datetime", ReversedUTC):
+            observation = await target.execute_prepared(call)
+        assert observation.status == "success"
+        assert observation.payload.content == "synthetic-canary"
+        await repo.save_observation(observation, instance_id=owner)
+        gateway = ModelGateway(connection, work_item_id=work)
+        evaluation = gateway.prepare("judge", {"observation": "synthetic-canary"}, Answer)
+        assert (await repo.begin_operation(evaluation.call.request, instance_id=owner)).created
+        with patch.object(chat, "datetime", ReversedUTC):
+            result = await gateway.execute(evaluation)
+        assert result.output == Answer(verdict="pass")
+        await repo.save_observation(result.observation, instance_id=owner)
     view = await repo.read_run(str(snapshot.id))
     assert len(view.observations) == 2
+    assert [(item.started_at, item.finished_at) for item in view.observations] == [
+        (base, base - timedelta(seconds=2)),
+        (base + timedelta(minutes=1), base + timedelta(minutes=1, seconds=-2)),
+    ]
     identities = {item.actor: item.payload.provider_model for item in view.observations}
     assert identities == {"target": "target-reported-proof", "judge": "evaluator-reported-proof"}
     assert identities["target"] != snapshot.profile.target.model
@@ -154,6 +180,10 @@ async def prove(data_dir, server, transport):
         for reported in identities.values():
             assert reported in artifact.content
         assert "provider_model" in artifact.content
+        for item in view.observations:
+            saved = item.model_dump(mode="json")
+            assert saved["started_at"] in artifact.content
+            assert saved["finished_at"] in artifact.content
     assert len(server.calls) == 2
     assert server.calls[0][0] == "/target/chat/completions"
     assert server.calls[1][0] == "/evaluator/chat/completions"
@@ -167,7 +197,9 @@ async def prove(data_dir, server, transport):
             ("settled",),
         ]
 
-    return identities
+    return identities, [
+        (item.started_at.isoformat(), item.finished_at.isoformat()) for item in view.observations
+    ]
 
 
 def main():
@@ -188,7 +220,7 @@ def main():
     )
     try:
         with tempfile.TemporaryDirectory(prefix="asclepius-groq-proof-") as temporary:
-            identities = asyncio.run(prove(Path(temporary), server, transport))
+            identities, reversed_samples = asyncio.run(prove(Path(temporary), server, transport))
     finally:
         server.shutdown()
         server.server_close()
@@ -203,6 +235,8 @@ def main():
                 "loopback_https_requests": 2,
                 "persisted_observations": 2,
                 "validated_evaluator_output": True,
+                "clock_reversal_verified": True,
+                "clock_reversal_samples": reversed_samples,
                 "live_groq": False,
             }
         )

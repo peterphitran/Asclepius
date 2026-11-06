@@ -3,51 +3,17 @@ import os
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-import portalocker
-
 from asclepius.config import load_daemon
 from asclepius.domain import AppError, DaemonStatus
-from asclepius.maintenance import instance_lock, readiness_lock
 from asclepius.paths import local_directory
 from asclepius.storage import Repository
 
 
 def daemon_status(data_dir: Path) -> DaemonStatus:
-    directory = local_directory(data_dir)
-    control = asyncio.run(Repository(directory).control())
-    try:
-        with instance_lock(directory):
-            owned = False
-    except portalocker.LockException:
-        owned = True
-    except OSError:
-        raise AppError("storage_error", "Cannot inspect daemon ownership.") from None
-    generation_owned = False
-    if owned and control.instance_id is not None:
-        try:
-            with readiness_lock(directory, str(control.instance_id)):
-                pass
-        except portalocker.LockException:
-            generation_owned = True
-    fresh = (
-        control.heartbeat_at is not None
-        and 0 <= (datetime.now(UTC) - control.heartbeat_at).total_seconds() <= 10
-    )
-    return control.model_copy(
-        update={
-            "owned": owned,
-            "responsive": owned and generation_owned and fresh,
-            "state": (control.state if generation_owned else "starting") if owned else "stopped",
-            "pid": control.pid if generation_owned else None,
-            "execution_available": control.execution_available
-            if owned and generation_owned and fresh
-            else False,
-        }
-    )
+    return asyncio.run(Repository(data_dir).daemon_status())
 
 
 def _wait_existing(directory: Path, timeout: float) -> DaemonStatus:

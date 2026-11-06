@@ -3,6 +3,7 @@ import json
 import sqlite3
 from collections.abc import Callable
 from contextlib import closing
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypeVar
@@ -40,11 +41,19 @@ from asclepius.domain import (
     Variant,
     allowed_transition,
 )
-from asclepius.maintenance import SCHEMA_VERSION, initialize_storage, maintenance_lock
+from asclepius.elapsed_clock import Tick, elapsed_clock
+from asclepius.maintenance import (
+    SCHEMA_VERSION,
+    initialize_storage,
+    instance_lock,
+    maintenance_lock,
+    readiness_lock,
+)
 from asclepius.paths import local_directory
 
 T = TypeVar("T")
 _STAGE = TypeAdapter(StageOutput)
+_HEARTBEAT_FRESH_NS = 10_000_000_000
 
 
 def _now() -> str:
@@ -53,6 +62,20 @@ def _now() -> str:
 
 def _json(value: BaseModel) -> str:
     return json.dumps(value.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+
+
+class ReadyHeartbeatExpired(AppError):
+    def __init__(self) -> None:
+        super().__init__("daemon_unavailable", "Start a ready daemon for this data directory.", 4)
+
+
+@dataclass(frozen=True)
+class _ControlView:
+    status: DaemonStatus
+    instance_held: bool
+    generation_held: bool
+    heartbeat_age_ns: int | None
+    fresh: bool
 
 
 class Repository:
@@ -154,21 +177,93 @@ class Repository:
         return row
 
     @staticmethod
-    def _ready(connection: sqlite3.Connection, instance_id: str | None = None) -> sqlite3.Row:
-        row = connection.execute("SELECT * FROM daemon_control WHERE singleton=1").fetchone()
-        fresh = False
-        if row and row["heartbeat_at"]:
-            heartbeat = datetime.fromisoformat(row["heartbeat_at"])
-            if heartbeat.tzinfo is not None:
-                fresh = 0 <= (datetime.now(UTC) - heartbeat).total_seconds() <= 10
+    def _tick(row: sqlite3.Row, prefix: str) -> Tick | None:
+        source, ns = row[f"{prefix}_clock"], row[f"{prefix}_tick_ns"]
+        if source is None and ns is None:
+            return None
         if (
-            not row
-            or row["state"] != "ready"
-            or not fresh
-            or (instance_id is not None and row["instance_id"] != instance_id)
+            source not in {"linux-boottime-v1", "windows-gettickcount64-v1"}
+            or type(ns) is not int
+            or not 0 <= ns <= 2**63 - 1
+        ):
+            raise AppError("storage_corrupt", "Invalid stored elapsed clock sample.")
+        return Tick(source, ns)
+
+    def _probe_locks(self, identity: UUID | None) -> tuple[bool, bool]:
+        def held(lock):
+            try:
+                with lock:
+                    return False
+            except portalocker.LockException:
+                return True
+
+        owned = held(instance_lock(self.data_dir))
+        generation = (
+            owned and identity is not None and held(readiness_lock(self.data_dir, str(identity)))
+        )
+        return owned, generation
+
+    @staticmethod
+    def _control_status(row: sqlite3.Row) -> DaemonStatus:
+        return DaemonStatus(
+            instance_id=row["instance_id"],
+            state=row["state"],
+            pid=row["pid"],
+            heartbeat_at=row["heartbeat_at"],
+            execution_available=bool(row["execution_available"]),
+        )
+
+    def _control_view(self, connection: sqlite3.Connection) -> _ControlView:
+        row = connection.execute("SELECT * FROM daemon_control WHERE singleton=1").fetchone()
+        status = self._control_status(row)
+        tick = self._tick(row, "heartbeat")
+        now = elapsed_clock.sample()
+        owned, generation = self._probe_locks(status.instance_id)
+        age = now.ns - tick.ns if tick is not None and tick.source == now.source else None
+        fresh = (
+            owned
+            and generation
+            and status.state in {"ready", "draining"}
+            and age is not None
+            and 0 <= age <= _HEARTBEAT_FRESH_NS
+        )
+        return _ControlView(status, owned, generation, age, fresh)
+
+    async def daemon_status(self) -> DaemonStatus:
+        def action(connection):
+            view = self._control_view(connection)
+            return view.status.model_copy(
+                update={
+                    "owned": view.instance_held,
+                    "responsive": view.fresh,
+                    "state": (view.status.state if view.generation_held else "starting")
+                    if view.instance_held
+                    else "stopped",
+                    "pid": view.status.pid if view.generation_held else None,
+                    "execution_available": view.status.execution_available and view.fresh,
+                }
+            )
+
+        return await self._run(action)
+
+    def _ready(self, connection: sqlite3.Connection, instance_id: str | None = None) -> None:
+        view = self._control_view(connection)
+        if (
+            view.status.state == "ready"
+            and instance_id is not None
+            and str(view.status.instance_id) == instance_id
+            and view.instance_held
+            and view.generation_held
+            and view.heartbeat_age_ns is not None
+            and view.heartbeat_age_ns > _HEARTBEAT_FRESH_NS
+        ):
+            raise ReadyHeartbeatExpired()
+        if (
+            view.status.state != "ready"
+            or not view.fresh
+            or (instance_id is not None and str(view.status.instance_id) != instance_id)
         ):
             raise AppError("daemon_unavailable", "Start a ready daemon for this data directory.", 4)
-        return row
 
     def _owned(self, connection: sqlite3.Connection, run_id: str, instance_id: str) -> sqlite3.Row:
         row = self._run_row(connection, run_id)
@@ -228,12 +323,18 @@ class Repository:
     async def set_ready(
         self, instance_id: str, *, pid: int | None = None, execution_available: bool = False
     ) -> None:
+        identity = str(UUID(instance_id))
+
         def action(connection):
+            current = connection.execute("SELECT instance_id FROM daemon_control").fetchone()[0]
+            if current == identity:
+                raise AppError("ownership", "A new ready generation requires a new identity.")
+            tick = elapsed_clock.sample()
             connection.execute(
                 "UPDATE daemon_control SET instance_id=?,state='ready',heartbeat_at=?,pid=?,"
-                "execution_available=? "
+                "execution_available=?,heartbeat_clock=?,heartbeat_tick_ns=? "
                 "WHERE singleton=1",
-                (instance_id, _now(), pid, int(execution_available)),
+                (identity, _now(), pid, int(execution_available), tick.source, tick.ns),
             )
 
         await self._run(action, write=True)
@@ -241,22 +342,18 @@ class Repository:
     async def control(self) -> DaemonStatus:
         def action(connection):
             row = connection.execute("SELECT * FROM daemon_control WHERE singleton=1").fetchone()
-            return DaemonStatus(
-                instance_id=row["instance_id"],
-                state=row["state"],
-                pid=row["pid"],
-                heartbeat_at=row["heartbeat_at"],
-                execution_available=bool(row["execution_available"]),
-            )
+            return self._control_status(row)
 
         return await self._run(action)
 
     async def heartbeat(self, instance_id: str) -> None:
         def action(connection):
+            tick = elapsed_clock.sample()
             cursor = connection.execute(
-                "UPDATE daemon_control SET heartbeat_at=? WHERE instance_id=? "
+                "UPDATE daemon_control SET heartbeat_at=?,heartbeat_clock=?,heartbeat_tick_ns=? "
+                "WHERE instance_id=? "
                 "AND state IN ('ready','draining')",
-                (_now(), instance_id),
+                (_now(), tick.source, tick.ns, instance_id),
             )
             if cursor.rowcount != 1:
                 raise AppError("ownership", "Daemon ownership changed.")
@@ -279,7 +376,8 @@ class Repository:
         await self._run(
             lambda connection: (
                 connection.execute(
-                    "UPDATE daemon_control SET state='stopped',pid=NULL,heartbeat_at=? "
+                    "UPDATE daemon_control SET state='stopped',pid=NULL,heartbeat_at=?,"
+                    "heartbeat_clock=NULL,heartbeat_tick_ns=NULL "
                     "WHERE instance_id=?",
                     (_now(), instance_id),
                 ).rowcount
@@ -303,11 +401,18 @@ class Repository:
         if row["reason"] == "budget_exhausted":
             raise AppError("budget_exhausted", "Run execution budget is exhausted.")
         snapshot = RunSnapshot.model_validate_json(row["snapshot_json"])
-        elapsed = (datetime.now(UTC) - datetime.fromisoformat(row["started_at"])).total_seconds()
+        owned, generation = self._probe_locks(UUID(instance_id))
+        if not owned or not generation:
+            raise AppError("ownership", "The current instance no longer holds its locks.")
+        started = self._tick(row, "started")
+        now = elapsed_clock.sample()
+        if started is None or started.source != now.source or now.ns < started.ns:
+            raise AppError("run_timeout", "Run execution clock is unavailable.")
+        elapsed = now.ns - started.ns
         deadline = snapshot.profile.limits.run_timeout_seconds
         if runtime_limits is not None:
             deadline = min(deadline, runtime_limits.run_timeout_seconds)
-        if elapsed >= deadline:
+        if elapsed >= deadline * 1_000_000_000:
             raise AppError("run_timeout", "Run execution deadline expired.")
         return row
 
@@ -461,10 +566,12 @@ class Repository:
                 )
                 if len(active) >= cap:
                     return None
+            tick = elapsed_clock.sample()
             changed = connection.execute(
-                "UPDATE runs SET state='running',owner_id=?,started_at=? "
+                "UPDATE runs SET state='running',owner_id=?,started_at=?,started_clock=?,"
+                "started_tick_ns=? "
                 "WHERE id=? AND state='queued'",
-                (instance_id, _now(), row["id"]),
+                (instance_id, _now(), tick.source, tick.ns, row["id"]),
             )
             if changed.rowcount != 1:
                 raise AppError("conflict", "Queued run changed before its claim.")
