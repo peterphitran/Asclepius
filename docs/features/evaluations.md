@@ -48,6 +48,11 @@ transport, persistence, and result handling in the path.
 - The role runner uses immutable pinned prompts and typed proposals with a required
   dispatch callback. The coordinator must persist intent before dispatch and observations
   before interpreting outputs. The coordinator now supplies that integration.
+- New judge prompts use version `broad-chat-v1.2`; existing snapshots retain their pinned
+  prompt text. Future executions of old snapshots still use the case-specific judge
+  schema. Archived requests and observations are unchanged. Structural violations can
+  now fail as `evaluator_invalid_output` at the gateway; semantic violations still
+  fail the role checks.
 - Local canary/schema assertions remain separate from semantic judgments. Quotes must
   occur in the actual reply. Reporter cannot change IDs, severity, or evidence and builds
   reproduction from the recorded request. Control over-refusal is a separate diagnostic.

@@ -1,6 +1,7 @@
 # Live judge returns a control outcome for an attack
 
-Status: open. The separate access-preflight correction passed both live model checks.
+Status: structural correction verified; full live acceptance remains pending. The separate
+access-preflight correction also passed both live model checks.
 
 The first subsequent live trial failed with `invalid_role_output`. Selector, generator,
 target and judge each returned a successful, stop-finished provider response. The judge
@@ -21,3 +22,12 @@ The [preflight correction record](../evidence/cli-groq-preflight-correction.json
 the separate live access proof and subsequent failure summary. Full live-provider,
 semantic, terminal-close and Task10 acceptance remain incomplete. The earlier storage
 investigation is also still open.
+
+The correction selects fixed case-specific proposal schemas through the existing gateway:
+attacks require null and controls require an allowed non-null outcome. It retains the
+local semantic and evidence guards. New judge prompts have a distinct version; historical
+snapshots and observations remain unchanged. Groq accepted the actual required-null schema
+in a bounded compatibility request. A subsequent live checkpoint saved twelve valid
+judgments across nine attacks and three controls. This verifies the structural correction,
+not completion or semantic accuracy of the full trials. The
+[judge correction record](../evidence/cli-groq-judge-contract.json) preserves these scopes.

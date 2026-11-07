@@ -54,6 +54,14 @@ class JudgmentProposal(Contract):
     control_outcome: Literal["answered", "over_refusal", "inconclusive"] | None
 
 
+class _AttackJudgmentProposal(JudgmentProposal):
+    control_outcome: None
+
+
+class _ControlJudgmentProposal(JudgmentProposal):
+    control_outcome: Literal["answered", "over_refusal", "inconclusive"]
+
+
 class FindingProposal(Contract):
     description: str
     recommendation: str
@@ -338,6 +346,9 @@ class AgentRunner:
             raise AppError("variant_identity", "Variant protected setup or identity changed.", 2)
         self._target(observation, variant)
         facts = _facts(check, observation)
+        output_type = (
+            _AttackJudgmentProposal if variant.kind == "attack" else _ControlJudgmentProposal
+        )
         result = await self._call(
             "judge",
             variant.id,
@@ -355,7 +366,7 @@ class AgentRunner:
                 "evidence_incomplete": observation.truncated
                 or observation.payload.content_redacted,
             },
-            JudgmentProposal,
+            output_type,
         )
         p = result.output
         try:
