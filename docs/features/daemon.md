@@ -49,6 +49,9 @@ that incomplete runs are marked interrupted, while queued runs remain available.
   lock. PID and a fresh old row cannot establish a new child's readiness.
 - A timed-out stop never kills the process. A startup timeout may leave a child starting;
   inspect status. Do not delete lock files to force ownership.
+- Storage failures can include bounded native error codes and trusted stack locations in
+  the daemon log, without exception messages, queries or credentials. Preserve that record
+  and the store when investigating the [open storage issue](../verification/issues/2026-11-06-storage-busy.md).
 - Per-run bounds are insufficient: enforce global, model-provider, target, and mutable
   corpus limits across all profiles. Keep control operations responsive under saturation.
 - Cancellation and drain must not strand invisible uploaded fixtures; surface the

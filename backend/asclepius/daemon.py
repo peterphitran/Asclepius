@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import json
 import os
+import sqlite3
 import ssl
 from pathlib import Path
 
@@ -126,12 +127,62 @@ def main() -> int:
             )
         )
         return 0
-    except AppError as error:
-        print(json.dumps({"error": error.code}), flush=True)
-        return error.exit_code
-    except Exception:
-        print(json.dumps({"error": "daemon_failed"}), flush=True)
-        return 5
+    except Exception as error:
+        payload = {"error": error.code if isinstance(error, AppError) else "daemon_failed"}
+        exceptions = [error]
+        indices = {id(error): 0}
+        nodes = []
+        truncated = False
+        relevant = False
+        for current in exceptions:
+            node = {"type": type(current).__name__}
+            if isinstance(current, AppError):
+                node["code"] = current.code
+                relevant |= current.code.startswith("storage_")
+            if isinstance(current, sqlite3.Error):
+                relevant = True
+                sqlite_code = getattr(current, "sqlite_errorcode", None)
+                sqlite_name = getattr(current, "sqlite_errorname", None)
+                if type(sqlite_code) is int:
+                    node["sqlite_code"] = sqlite_code
+                    if (
+                        isinstance(sqlite_name, str)
+                        and sqlite_name.startswith("SQLITE_")
+                        and getattr(sqlite3, sqlite_name, None) == sqlite_code
+                    ):
+                        node["sqlite_name"] = sqlite_name
+            for relation in ("cause", "context"):
+                linked = getattr(current, f"__{relation}__")
+                if linked is not None:
+                    if id(linked) not in indices:
+                        if len(exceptions) == 16:
+                            truncated = True
+                            continue
+                        indices[id(linked)] = len(exceptions)
+                        exceptions.append(linked)
+                    node[relation] = indices[id(linked)]
+            frames = []
+            trace = current.__traceback__
+            while trace is not None:
+                module = trace.tb_frame.f_globals.get("__name__", "")
+                if isinstance(module, str) and module.startswith("asclepius."):
+                    if len(frames) == 16:
+                        truncated = True
+                        break
+                    frames.append(
+                        {
+                            "module": module,
+                            "function": trace.tb_frame.f_code.co_name,
+                            "line": trace.tb_lineno,
+                        }
+                    )
+                trace = trace.tb_next
+            node["frames"] = frames
+            nodes.append(node)
+        if relevant:
+            payload["diagnostics"] = {"exceptions": nodes, "truncated": truncated}
+        print(json.dumps(payload), flush=True)
+        return error.exit_code if isinstance(error, AppError) else 5
 
 
 if __name__ == "__main__":
