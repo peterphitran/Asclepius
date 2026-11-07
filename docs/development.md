@@ -56,6 +56,38 @@ formats. It removes its temporary store and closes its server. The checked-in
 localhost key is public test material. No real API key, production trust change, live Groq
 response, queued CLI execution, or four-agent pipeline is involved.
 
+## Guarded hosted workflow
+
+From `backend`, use the development driver with a fresh artifact directory and the Python
+interpreter that has the CLI installed:
+
+```text
+python scripts/verify_live_groq.py --target examples/groq-target.toml --evaluator examples/groq-evaluator.toml --artifacts /absolute/new-proof-directory --python /absolute/installed-python
+```
+
+Set `ASCLEPIUS_LIVE_TESTS=1` and the environment credentials referenced by both configurations
+before running. Missing opt-in or credentials returns `not_run` with exit code 2. Failure
+returns 1; technical workflow success returns 0. Native Windows uses its own interpreter
+and environment. The marked pytest entry point is `tests/cli/test_live_groq.py`; the normal
+offline command excludes it with `-m "not live"`.
+
+The driver captures configuration bytes once, checks model access with small separately
+counted preflights, then runs two full 80-case packs sequentially. The approved live limits
+include ten requests per minute and 45 minutes per run. It waits 61 seconds after preflight
+to clear the shared account window. Actual requests and tokens are recorded separately
+from reserved completion allowance; uncertain paid requests are never retried automatically.
+
+Evidence includes provider-reported identities, every family/control sample pair, stopped
+inspection, restart, comparison and three sanitized exports. Review the samples for semantic
+accuracy separately. A successful driver result does not establish physical terminal-close
+survival or complete Task 10. Controlled loopback verification uses an explicit fixture CA
+and is labeled separately from live Groq execution.
+
+The [preparation evidence](verification/evidence/cli-live-workflow-preparation.json) records
+controlled checks separately from live acceptance. An earlier controlled run lost its daemon
+with a logged `storage_busy`; the [storage investigation](verification/issues/2026-11-06-storage-busy.md)
+remains open. Later passing checks do not establish its cause or a storage fix.
+
 ## Inspect the built-in pack
 
 ```text

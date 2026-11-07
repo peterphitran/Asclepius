@@ -832,11 +832,56 @@ installed component proof. Commit it independently before the opt-in acceptance 
 This prerequisite does not complete any live or terminal-close acceptance checkbox.
 
 The later live scenario requires explicit opt-in and an environment credential before calls.
-Count bounded model-access preflights separately, deduplicated by origin, credential reference,
+Count bounded model-access preflights separately, deduplicated by the full effective endpoint, including its path, credential reference,
 model, and strict-output mode. Run two full packs within separate pinned budgets. Never retry
 uncertain paid attempts or silently raise the limits. Technical workflow checks and manual
 semantic review have separate outcomes. Controlled PTY or classic-console tests establish only
 their observed OS mechanism; physical live terminal closure remains a distinct acceptance gap.
+
+#### Controlled terminal mechanism
+
+After the guarded workflow unit is independently verified and committed, add separate WSL
+and native Windows controlled-session regressions. The terminal creator must run the selected
+installed or source interpreter's public daemon-start and run commands while attached. An
+outside public `runs watch` client records an event cursor before closure. Hold a verified
+loopback HTTPS reply across closure, then prove newer persisted events, new provider receipts,
+the same daemon PID/generation, full-pack completion and public shutdown after release.
+
+On WSL, create and verify an owned controlling PTY session and foreground process group,
+then close only that PTY's master and observe creator hangup/reaping. On Windows, use an owned
+ConPTY controller bounded by a supervisor Job. Pin fresh process handles before resume, record
+the actual close event and creator exit, and retain the Job until the detached daemon finishes
+and stops. Closing the Job at console closure would invalidate continuation proof. Forced
+cleanup means failure. Do not interact with existing terminal windows or infer ownership from
+window titles or PIDs. These tests establish the observed controlled OS mechanism; physical
+terminal application closure and real Groq execution remain separate acceptance gaps.
+
+#### Clock correction required by controlled verification
+
+A retained daemon traceback and a separate verified HTTPS regression establish that
+backward UTC movement can reject a received reply before persistence. Correct this in an
+isolated runtime unit before accepting the guarded workflow. Retain the actual aware UTC
+start and finish values even when their order reverses. Preserve reply/status invariants,
+legacy JSON and the prohibition on automatically replaying uncertain provider work.
+
+The accepted design stores private elapsed heartbeat and run-start samples in schema 4.
+Repository owns one freshness policy for status and transactional admission. Samples have
+authority only while the matching daemon generation holds both existing ownership locks.
+Use Linux `CLOCK_BOOTTIME` and Windows `GetTickCount64`; never fall back to UTC. Renew the
+heartbeat before claiming work after a long pause. Recover only a precisely classified
+expired heartbeat of the same live ready generation at claim or startup orphan admission;
+renew under the existing fence and reread lifecycle state before another claim. Other
+ownership, clock and storage failures remain errors. Keep the ten-second stale-owner threshold
+and the effective minimum of snapshot/runtime run limits. UTC remains an audit label, not
+an elapsed duration. Queue and history ordering retain their existing rules.
+
+New stores apply migration 004. Existing stores require explicit stopped v1/v2/v3 migration;
+ordinary use rejects older versions, with no fabricated tick backfill. Released owner locks
+now prevent admission immediately, replacing the former brief post-crash acceptance window.
+Same-process and separate-process probes passed on the tested native Windows and WSL paths.
+Physical host-sleep behavior remains unmeasured. Verify the original HTTPS failure, clock
+jumps, stale and released owners, deadline boundaries, migration rollback, legacy history,
+both platform suites and installed artifacts before integrating this runtime unit.
 
 ### Task 11: Ollama through the existing target boundary
 

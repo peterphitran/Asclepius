@@ -28,15 +28,15 @@ class CliResult:
     payload: dict
 
 
-def isolated_python(*arguments, environment=None):
+def isolated_python(*arguments, environment=None, interpreter=None, timeout=30):
     child_environment = dict(os.environ if environment is None else environment)
     child_environment.pop("PYTHONPATH", None)
     child_environment.pop("PYTHONHOME", None)
     return subprocess.run(
-        [sys.executable, "-I", *map(str, arguments)],
+        [str(interpreter or sys.executable), "-I", *map(str, arguments)],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=timeout,
         env=child_environment,
     )
 
@@ -82,6 +82,7 @@ class Provider(ThreadingHTTPServer):
         self.fault = fault
         self.delay = delay
         self.calls = []
+        self.preflights = []
         self.failures = []
         self.lock = threading.Lock()
         self.active = 0
@@ -112,6 +113,25 @@ class Provider(ThreadingHTTPServer):
                 self.gates.remove(gate)
 
     def respond(self, body, *, on_receipt=None):
+        if body.get("messages") == [
+            {"role": "user", "content": "Asclepius access preflight. Reply OK."}
+        ]:
+            self.preflights.append(body)
+            if self.fault == "preflight_401":
+                return 401, {"error": "fixture access denied"}
+            return 200, {
+                "id": "fixture-preflight-" + str(len(self.preflights)),
+                "model": "fixture-reported-" + body["model"],
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {
+                            "content": '{"ok":true}' if "response_format" in body else "OK",
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3},
+            }
         with closing(sqlite3.connect(self.directory / "asclepius.sqlite3")) as connection:
             candidates = connection.execute(
                 "SELECT id,run_id,work_item_id,request_json FROM operations WHERE status='pending'"
@@ -183,6 +203,7 @@ class Provider(ThreadingHTTPServer):
             content = '{"attacks":[]}'
         return 200, {
             "id": "fixture-" + operation,
+            "model": "fixture-reported-" + body.get("model", "unspecified"),
             "choices": [
                 {
                     "index": 0,
