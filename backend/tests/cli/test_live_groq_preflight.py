@@ -1,6 +1,7 @@
 import copy
 import html
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -114,7 +115,7 @@ def test_original_cutoff_retains_usage_and_stops_before_trials(tmp_path):
             target,
             evaluator,
             artifacts,
-            environment={"PIPELINE_KEY": KEY},
+            environment=dict(os.environ, PIPELINE_KEY=KEY),
             controlled_ca=CERTIFICATES / "localhost-cert.pem",
         )
         assert report["reason"] == "preflight_incomplete"
@@ -211,3 +212,38 @@ def test_false_boolean_remains_valid_strict_preflight(tmp_path):
 
         server.respond = false_boolean
         assert all(e["status"] == "succeeded" for e in invoke(server, tmp_path)["preflights"])
+
+
+@pytest.mark.parametrize("fault", ["finish", "usage_shape", "oversize_identity"])
+def test_hostile_fields_never_become_arbitrary_diagnostics(tmp_path, fault):
+    with provider(tmp_path / "store", CERTIFICATES) as server:
+        original = server.respond
+
+        def hostile(body, **kwargs):
+            status, reply = original(body, **kwargs)
+            if fault == "finish":
+                reply["choices"][0]["finish_reason"] = {"private": KEY}
+            elif fault == "usage_shape":
+                reply["usage"] = [KEY]
+            else:
+                reply["id"] = "x" * 1015 + KEY
+            return status, reply
+
+        server.respond = hostile
+        with pytest.raises(WorkflowFailure):
+            invoke(server, tmp_path)
+        saved = json.loads((tmp_path / "preflight.json").read_text())
+        entry = saved["preflights"][0]
+        assert entry["status"] == "failed"
+        assert len(server.preflights) == 1
+        assert server.calls == []
+        if fault == "finish":
+            assert entry["finish_reason"] == "other"
+            assert entry["usage"] == {"prompt_tokens": 5, "completion_tokens": 3}
+        elif fault == "usage_shape":
+            assert "usage" not in entry
+            assert entry["response_id"] == "fixture-preflight-1"
+        else:
+            assert "response_id" not in entry
+            assert entry["usage"] == {"prompt_tokens": 5, "completion_tokens": 3}
+        assert KEY not in json.dumps(saved)

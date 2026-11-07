@@ -34,6 +34,7 @@ class Probe:
     model: str
     strict: bool
     max_tokens: int
+    reasoning_effort: str | None = None
 
     @property
     def identity(self):
@@ -46,6 +47,8 @@ class Probe:
             self.secret_ref,
             self.model,
             self.strict,
+            self.max_tokens,
+            self.reasoning_effort,
         )
 
 
@@ -82,7 +85,7 @@ def redact(text, secrets):
     replacements = []
     for secret in secrets:
         encoded_pattern = "".join(
-            "(?:" + re.escape(character) + "|" + r"\\+u" + f"(?i:{ord(character):04x})" + ")"
+            "(?:" + r"\\+u" + f"(?i:{ord(character):04x})" + "|" + re.escape(character) + ")"
             for character in secret
         )
         forms = {secret, html.escape(secret), html.escape(secret, quote=False)}
@@ -149,17 +152,17 @@ def probes(profile, evaluator):
     unique = {}
     for spec, strict in specs:
         endpoint = spec.get("base_url", "https://api.groq.com/openai/v1").rstrip("/")
+        gpt_oss = spec["model"] in {"openai/gpt-oss-20b", "openai/gpt-oss-120b"}
+        ceiling = 512 if gpt_oss else 64
         probe = Probe(
             endpoint,
             spec["secret_ref"],
             spec["model"],
             strict,
-            min(64, spec.get("max_completion_tokens", 64)),
+            min(ceiling, spec.get("max_completion_tokens", ceiling)),
+            "low" if gpt_oss else None,
         )
-        key = probe.identity
-        previous = unique.get(key)
-        if previous is None or probe.max_tokens < previous.max_tokens:
-            unique[key] = probe
+        unique.setdefault(probe.identity, probe)
     return list(unique.values())
 
 
@@ -177,6 +180,38 @@ def controlled_endpoints(items, ca_bundle):
         )
 
 
+def _response_metadata(reply):
+    metadata = {}
+    if not isinstance(reply, dict):
+        return metadata
+    for source, destination in (("id", "response_id"), ("model", "reported_model")):
+        value = reply.get(source)
+        if isinstance(value, str) and value.strip() and len(value) <= 1024:
+            metadata[destination] = value
+    choices = reply.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        finish = choices[0].get("finish_reason")
+        known = ("stop", "length", "content_filter", "tool_calls", "function_call")
+        metadata["finish_reason"] = (
+            finish if isinstance(finish, str) and finish in known else "other"
+        )
+    usage = reply.get("usage")
+    if isinstance(usage, dict):
+        counts = {
+            key: usage[key]
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+            if type(usage.get(key)) is int and usage[key] >= 0
+        }
+        details = usage.get("completion_tokens_details")
+        if isinstance(details, dict):
+            reasoning = details.get("reasoning_tokens")
+            if type(reasoning) is int and reasoning >= 0:
+                counts["completion_tokens_details"] = {"reasoning_tokens": reasoning}
+        if counts:
+            metadata["usage"] = counts
+    return metadata
+
+
 def preflight(items, environment, report, persist, *, ca_bundle=None):
     context = ssl.create_default_context(cafile=str(ca_bundle) if ca_bundle else None)
     with httpx.Client(
@@ -192,6 +227,8 @@ def preflight(items, environment, report, persist, *, ca_bundle=None):
                 "status": "attempted_unknown",
                 "attempted_at": datetime.now(UTC).isoformat(),
             }
+            if item.reasoning_effort is not None:
+                entry["reasoning_effort"] = item.reasoning_effort
             report["preflights"].append(entry)
             persist()
             body = {
@@ -200,7 +237,12 @@ def preflight(items, environment, report, persist, *, ca_bundle=None):
                 "temperature": 0,
                 "messages": [{"role": "user", "content": "Asclepius access preflight. Reply OK."}],
             }
+            if item.reasoning_effort is not None:
+                body["reasoning_effort"] = item.reasoning_effort
             if item.strict:
+                body["messages"][0]["content"] = (
+                    'Asclepius access preflight. Reply with only {"ok":true}.'
+                )
                 body["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {
@@ -228,14 +270,23 @@ def preflight(items, environment, report, persist, *, ca_bundle=None):
                         raw.extend(chunk)
                         require(len(raw) <= 65536, "preflight_response_too_large")
                 reply = json.loads(raw)
-                for field in ("id", "model"):
-                    require(
-                        isinstance(reply.get(field), str) and reply[field].strip(),
-                        "preflight_identity_missing",
-                    )
-                choice = reply["choices"][0]
-                require(choice["finish_reason"] == "stop", "preflight_incomplete")
-                content = choice["message"]["content"]
+                entry.update(_response_metadata(reply))
+                require(isinstance(reply, dict), "preflight_response_or_transport_failure")
+                require(
+                    "response_id" in entry and "reported_model" in entry,
+                    "preflight_identity_missing",
+                )
+                entry["model_mismatch"] = reply["model"] != item.model
+                choices = reply.get("choices")
+                require(
+                    isinstance(choices, list) and choices and isinstance(choices[0], dict),
+                    "preflight_response_or_transport_failure",
+                )
+                choice = choices[0]
+                require(choice.get("finish_reason") == "stop", "preflight_incomplete")
+                message = choice.get("message")
+                require(isinstance(message, dict), "preflight_response_or_transport_failure")
+                content = message.get("content")
                 require(isinstance(content, str) and content.strip(), "preflight_content_missing")
                 if item.strict:
                     output = json.loads(content)
@@ -245,21 +296,12 @@ def preflight(items, environment, report, persist, *, ca_bundle=None):
                         and type(output["ok"]) is bool,
                         "preflight_schema_invalid",
                     )
-                usage = reply.get("usage", {})
+                usage = entry.get("usage", {})
                 require(
-                    all(
-                        type(usage.get(key)) is int and usage[key] >= 0
-                        for key in ("prompt_tokens", "completion_tokens")
-                    ),
+                    all(key in usage for key in ("prompt_tokens", "completion_tokens")),
                     "preflight_usage_missing",
                 )
-                entry.update(
-                    status="succeeded",
-                    response_id=reply["id"],
-                    reported_model=reply["model"],
-                    model_mismatch=reply["model"] != item.model,
-                    usage={key: usage.get(key) for key in ("prompt_tokens", "completion_tokens")},
-                )
+                entry["status"] = "succeeded"
             except WorkflowFailure:
                 entry["status"] = "failed"
                 raise

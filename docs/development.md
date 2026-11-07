@@ -72,7 +72,13 @@ and environment. The marked pytest entry point is `tests/cli/test_live_groq.py`;
 offline command excludes it with `-m "not live"`.
 
 The driver captures configuration bytes once, checks model access with small separately
-counted preflights, then runs two full 80-case packs sequentially. The approved live limits
+counted preflights, then runs two full 80-case packs sequentially. Only `openai/gpt-oss-20b`
+and `openai/gpt-oss-120b` use a preflight ceiling of 512 completion tokens and
+`reasoning_effort="low"`; other models use 64 without a reasoning-effort override. Smaller
+explicit caps are respected. These settings do not change trial configuration or budgets.
+Incomplete preflights still fail without retry; sanitized evidence retains available response
+identity, finish reason and valid usage counts, including reasoning tokens when reported.
+Reasoning tokens are part of completion usage, not added to it. The approved live limits
 include ten requests per minute and 45 minutes per run. It waits 61 seconds after preflight
 to clear the shared account window. Actual requests and tokens are recorded separately
 from reserved completion allowance; uncertain paid requests are never retried automatically.

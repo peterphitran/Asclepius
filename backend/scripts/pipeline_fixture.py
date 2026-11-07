@@ -113,9 +113,15 @@ class Provider(ThreadingHTTPServer):
                 self.gates.remove(gate)
 
     def respond(self, body, *, on_receipt=None):
-        if body.get("messages") == [
-            {"role": "user", "content": "Asclepius access preflight. Reply OK."}
-        ]:
+        if body.get("messages") in (
+            [{"role": "user", "content": "Asclepius access preflight. Reply OK."}],
+            [
+                {
+                    "role": "user",
+                    "content": 'Asclepius access preflight. Reply with only {"ok":true}.',
+                }
+            ],
+        ):
             self.preflights.append(body)
             if self.fault == "preflight_401":
                 return 401, {"error": "fixture access denied"}
