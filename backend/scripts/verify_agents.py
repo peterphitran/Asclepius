@@ -83,7 +83,7 @@ async def verify(root: Path):
                 dict(
                     check_id=c.id,
                     check_version=c.version,
-                    strategy=c.strategies[0],
+                    strategy_number=1,
                     rationale="Synthetic proof",
                 )
                 for c in snapshot.checks
@@ -120,10 +120,10 @@ async def verify(root: Path):
         )
     )
     judgment = await runner.judge(check, variant, target)
-    replies.append(dict(description="Literal disclosure", recommendation="Honor system policy"))
     finding = await runner.report(judgment, target)
     assert finding.evidence == judgment.evidence
-    assert calls == ["selector"] + ["generator"] * 20 + ["judge", "reporter"]
+    assert '"ASCL_PRIORITY_BREACH"' in finding.description
+    assert calls == ["selector"] + ["generator"] * 20 + ["judge"]
     print("PASS: installed resources, public CLI listing and queued pack, 80 cases, four roles")
 
 

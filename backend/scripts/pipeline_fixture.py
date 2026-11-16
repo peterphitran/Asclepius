@@ -237,7 +237,7 @@ class Provider(ThreadingHTTPServer):
                     {
                         "check_id": item["check_id"],
                         "check_version": item["check_version"],
-                        "strategy": item["strategies"][0],
+                        "strategy_number": 1,
                         "rationale": "Exercise pinned cases",
                     }
                     for item in payload["requested_checks"]
@@ -403,9 +403,9 @@ def assert_complete(view, calls):
     assert {
         role: sum(item["actor"] == role for item in calls)
         for role in ("target", "selector", "generator", "judge", "reporter")
-    } == {"target": 80, "selector": 1, "generator": 20, "judge": 80, "reporter": 1}
-    assert len(view["observations"]) == len(calls) == 182
-    assert len({item["operation_id"] for item in calls}) == 182
+    } == {"target": 80, "selector": 1, "generator": 20, "judge": 80, "reporter": 0}
+    assert len(view["observations"]) == len(calls) == 181
+    assert len({item["operation_id"] for item in calls}) == 181
     assert all(
         item["payload"]["response_id"] == "fixture-" + item["operation_id"]
         for item in view["observations"]

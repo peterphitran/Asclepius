@@ -415,7 +415,7 @@ def drain_scenario(root, certificates):
 def crash_scenario(root, certificates, point):
     from contextlib import nullcontext
 
-    cap = {"before_send": 1, "target_received": 10000, "after_reporter": 5}[point]
+    cap = {"before_send": 1, "target_received": 10000, "after_reporter": 4}[point]
     with owned_fixture(root, certificates, requests_per_minute=cap) as fixture:
         target = fixture.targets["fixture"]
         target.write_text(
@@ -464,7 +464,6 @@ def crash_scenario(root, certificates, point):
                         "generator",
                         "target",
                         "judge",
-                        "reporter",
                     ]
                 else:
                     assert [item["actor"] for item in fixture.server.calls] == ["selector"]

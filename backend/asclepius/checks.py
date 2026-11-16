@@ -92,7 +92,9 @@ def load_pack_plan(pack_id: str) -> SubmissionPlan:
         prompts=tuple(
             PromptSnapshot(
                 role=role,
-                version="broad-chat-v1.2" if role == "judge" else "broad-chat-v1.1",
+                version={"judge": "broad-chat-v1.3", "selector": "broad-chat-v1.2"}.get(
+                    role, "broad-chat-v1.1"
+                ),
                 content=_resource(f"prompts/{role}.txt"),
             )
             for role in ("selector", "generator", "judge", "reporter")
