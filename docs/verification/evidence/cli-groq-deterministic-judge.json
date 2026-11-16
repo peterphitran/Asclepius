@@ -1,0 +1,224 @@
+{
+  "scope": "Narrow complete all-met deterministic judge disagreement correction; controlled verification, not hosted acceptance.",
+  "captured_failure": {
+    "workflow": "live-groq-tpm-flat-20261109T192208Z",
+    "run_id": "19216c59-d3a0-4d48-aeca-7c00011830fd",
+    "saved_judgments": 53,
+    "target_observations": 54,
+    "reason": "invalid_role_output",
+    "cause": "Structurally valid inconclusive judge proposal conflicts with met local deterministic assertion on a complete unredacted refusal.",
+    "artifact": "/home/ptran/.codex/asclepius-task10/live-groq-tpm-flat-20261109T192208Z/failure-summary.json"
+  },
+  "baseline": {
+    "worktree": "/mnt/c/Users/ptran/Downloads/Projects/Asclepius-implementation-worktrees/cli-deterministic-judge",
+    "branch": "codex/cli-deterministic-judge",
+    "baseline_commit": "67310a6c67500c26087831ab7cd67d1dd9787d26",
+    "parent": "c7f4a5a3de20878974778c7674aee5dfdd9d6e30",
+    "purpose": "Private snapshot of inherited dirty tracked changes, not a reviewed acceptance commit; main worktree remains unchanged."
+  },
+  "inherited_changes": {
+    "artifact": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/inherited-source.json",
+    "tracked_files": 17,
+    "review_scope": "Inherited snapshot is preserved, not newly reviewed or published by this correction."
+  },
+  "regression": {
+    "test_only_commit": "2b9973c97e5fadbb7a3088aa0f455c7275f1c581",
+    "before": {
+      "command": "/home/ptran/.codex/asclepius-task10/deterministic-source-env/bin/python -m pytest tests/cli/test_deterministic_verdict.py -vv",
+      "cwd": "/mnt/c/Users/ptran/Downloads/Projects/Asclepius-implementation-worktrees/cli-deterministic-judge/backend",
+      "log": "source-owner-red-captured.log",
+      "exit_code": 1,
+      "result": "4 failed in 2.63s",
+      "decisive_failure": "asclepius.agents.RoleOutputError: Evaluator proposal violates the role contract.",
+      "failure_site": "asclepius/agents.py:505",
+      "public_error_code": "invalid_role_output"
+    },
+    "after_unchanged_tests": {
+      "command": "/home/ptran/.codex/asclepius-task10/deterministic-source-env/bin/python -m pytest tests/cli/test_deterministic_verdict.py -vv",
+      "log": "source-owner-green-committed-tests.log",
+      "exit_code": 0,
+      "result": "4 passed in 1.44s"
+    }
+  },
+  "source_checks": [
+    {
+      "command": "/home/ptran/.codex/asclepius-task10/deterministic-source-env/bin/python -m pytest tests/cli/test_agents.py tests/cli/test_judge_contract.py tests/cli/test_deterministic_verdict.py tests/cli/test_check_pack.py tests/cli/test_groq_contract.py -vv",
+      "cwd": "/mnt/c/Users/ptran/Downloads/Projects/Asclepius-implementation-worktrees/cli-deterministic-judge/backend",
+      "log": "source-owner-wsl-focused.log",
+      "exit_code": 0,
+      "result": "226 passed in 84.32s"
+    },
+    {
+      "command": "/mnt/c/Users/ptran/.codex/proofs/asclepius-detjudge-20261109/source/Scripts/python.exe -m pytest tests/cli/test_agents.py tests/cli/test_judge_contract.py tests/cli/test_deterministic_verdict.py tests/cli/test_check_pack.py tests/cli/test_groq_contract.py -vv --basetemp=C:/Users/ptran/.codex/proofs/asclepius-detjudge-20261109/source-pytest/focused",
+      "cwd": "/mnt/c/Users/ptran/Downloads/Projects/Asclepius-implementation-worktrees/cli-deterministic-judge/backend",
+      "log": "source-owner-native-focused.log",
+      "exit_code": 0,
+      "result": "226 passed in 81.18s"
+    },
+    {
+      "command": "/home/ptran/.codex/asclepius-task10/deterministic-source-env/bin/python -m ruff check asclepius/agents.py tests/cli/test_deterministic_verdict.py && /home/ptran/.codex/asclepius-task10/deterministic-source-env/bin/python -m ruff format --check asclepius/agents.py tests/cli/test_deterministic_verdict.py",
+      "cwd": "/mnt/c/Users/ptran/Downloads/Projects/Asclepius-implementation-worktrees/cli-deterministic-judge/backend",
+      "log": "source-owner-wsl-ruff.log",
+      "exit_code": 0,
+      "result": "All checks passed; 2 files already formatted"
+    },
+    {
+      "command": "/mnt/c/Users/ptran/.codex/proofs/asclepius-detjudge-20261109/source/Scripts/python.exe -m ruff check asclepius/agents.py tests/cli/test_deterministic_verdict.py && /mnt/c/Users/ptran/.codex/proofs/asclepius-detjudge-20261109/source/Scripts/python.exe -m ruff format --check asclepius/agents.py tests/cli/test_deterministic_verdict.py",
+      "cwd": "/mnt/c/Users/ptran/Downloads/Projects/Asclepius-implementation-worktrees/cli-deterministic-judge/backend",
+      "log": "source-owner-native-ruff.log",
+      "exit_code": 0,
+      "result": "All checks passed; 2 files already formatted"
+    },
+    {
+      "command": "git --git-dir=/mnt/c/Users/ptran/Downloads/Projects/Asclepius/.git/worktrees/cli-deterministic-judge --work-tree=/mnt/c/Users/ptran/Downloads/Projects/Asclepius-implementation-worktrees/cli-deterministic-judge -c core.autocrlf=true -c core.safecrlf=false diff --check",
+      "exit_code": 0
+    }
+  ],
+  "full_cli_suite_rerun": false,
+  "frozen_source_sha256": {
+    "backend/asclepius/agents.py": "b1dc69a5262af45c03cb354471a64de31abe232467a8f3b933e3689826085d4b",
+    "backend/tests/cli/test_deterministic_verdict.py": "bdb76a2272903eda19e060a6947db4206db1b010f2e8de70d4edbb966bfadf74",
+    "docs/features/evaluations.md": "ba97c1fae2493dfbc70de5af1899c5e83be8dea64673d93f66a0d8882a51a1d6"
+  },
+  "source_wheel_installed": {
+    "wheel_sha256": "03a74bd47438832d2d62415075763992bc440243a72484358f64f3697fce8309",
+    "matched_asclepius_members": 31,
+    "wsl": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/runtime-wsl.json",
+    "native": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/runtime-native.json",
+    "identical_members_on_both_os": true
+  },
+  "installed_proofs": {
+    "wsl": {
+      "status": "succeeded",
+      "trial_requests": 364,
+      "preflights": 5,
+      "captured_disagreement_regressions": [
+        {
+          "run_id": "b9ebd55b-222f-4fba-b25a-edf4a6419132",
+          "judgment_id": "bda0bd96-1ec1-55ec-8de1-22325a78a66a",
+          "raw_proposal_unchanged": true
+        },
+        {
+          "run_id": "5beacf9a-186f-4e0f-8cf6-9f52449ca219",
+          "judgment_id": "a26a1ade-38b7-5308-99a4-46b33ce6ccd8",
+          "raw_proposal_unchanged": true
+        }
+      ],
+      "cleanup": [
+        {
+          "daemon_stopped": true
+        },
+        {
+          "daemon_stopped": true
+        }
+      ],
+      "exports": 3,
+      "artifact": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/installed-wsl-proof.json",
+      "sha256": "4a9721c5b8bf52c55bd81498c75437350173d7e87a0fe23123112a5cbef7ed4f",
+      "scope": "Captured reply and proposal through installed CLI, HTTPS, daemon, persistence, export and stopped reread. Synthetic target request uses the fixture generator. No hosted provider request."
+    },
+    "native": {
+      "status": "succeeded",
+      "trial_requests": 364,
+      "preflights": 5,
+      "captured_disagreement_regressions": [
+        {
+          "run_id": "3533842c-1505-47d3-8bc8-a0a5ad37116b",
+          "judgment_id": "0dfbae8c-e9a9-569e-b8b3-234050e2c72c",
+          "raw_proposal_unchanged": true
+        },
+        {
+          "run_id": "48d6ebc7-8cfb-4067-910b-51dfbea4ed7b",
+          "judgment_id": "bb0f1297-f7da-53d1-bf8b-9502afc513cb",
+          "raw_proposal_unchanged": true
+        }
+      ],
+      "cleanup": [
+        {
+          "daemon_stopped": true
+        },
+        {
+          "daemon_stopped": true
+        }
+      ],
+      "exports": 3,
+      "artifact": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/installed-native-proof.json",
+      "sha256": "2d3e35607d9e1b7202b7580bf152725044a6b379bc7e05ade608de609f62a21d",
+      "scope": "Captured reply and proposal through installed CLI, HTTPS, daemon, persistence, export and stopped reread. Synthetic target request uses the fixture generator. No hosted provider request."
+    }
+  },
+  "reviewers": [
+    {
+      "agent_path": "/root/detjudge_owner",
+      "actual_model": "gpt-6.1-sol",
+      "completed_final_present": true,
+      "report": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/source-owner-report.json",
+      "report_sha256": "78881e7270bf99f67e7c9f602cc6558d36eceb90655a0550d228713604ae0e06"
+    },
+    {
+      "agent_path": "/root/detjudge_comments",
+      "actual_model": "gpt-6.1-sol",
+      "completed_final_present": true,
+      "report": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/comments-review.md",
+      "report_sha256": "319911cd586e53721022393a8bbbfa961293d2dd454fe1cf680e96ebb971e607"
+    },
+    {
+      "agent_path": "/root/detjudge_review_a",
+      "actual_model": "gpt-6-astra",
+      "completed_final_present": true,
+      "report": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/review-a.md",
+      "report_sha256": "62a2c540d92dbcf744f952a6a3cfe695e10f74ba1a05d38f3f94f30e71066027"
+    },
+    {
+      "agent_path": "/root/detjudge_review_b",
+      "actual_model": "gpt-6.1-terra",
+      "completed_final_present": true,
+      "report": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/reviewer-b/review-b.md",
+      "report_sha256": "b1bf7072e1f7fcce8e09ccb1b5f1017ec33470294f13aeecce6d7a59560f3ee5"
+    },
+    {
+      "agent_path": "/root/detjudge_review_c",
+      "actual_model": "gpt-6.1-sol",
+      "completed_final_present": true,
+      "report": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/review-c.md",
+      "report_sha256": "056a9a0974af1d6e9a35a08ae7bf4f1d3451e4d3beedf1befd4c91673a4a96c3"
+    },
+    {
+      "agent_path": "/root/detjudge_review_d",
+      "actual_model": "gpt-6-luna",
+      "completed_final_present": true,
+      "report": "/home/ptran/.codex/asclepius-task10/reviewer-d/review-d.md",
+      "report_sha256": "719ac24bdd6dc957f2710dddabdb62ac200f655fdbe4e219c6b4132b7d965a76"
+    }
+  ],
+  "design": {
+    "selected": "Local reconciliation only for complete unredacted deterministic all-met results; preserve failed-fact, incomplete and semantic rules.",
+    "artifact": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/accepted-design.md",
+    "parent_scores": {
+      "request_contract": 16,
+      "local_adjudication": 22
+    },
+    "cross_judge": {
+      "actual_model": "gpt-6-luna",
+      "artifact": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/design-judge.md"
+    }
+  },
+  "new_hosted_requests_for_this_unit": 0,
+  "hosted_retest": "pending",
+  "task10_complete": false,
+  "remaining": [
+    "Two complete hosted trials",
+    "Semantic acceptance review",
+    "Physical lifecycle acceptance"
+  ],
+  "trail": "/mnt/c/Users/ptran/Downloads/Projects/Asclepius-implementation-worktrees/cli-evaluator/.audit/cli-evaluator.tsv",
+  "trail_audit": {
+    "status": "PASS",
+    "actual_model": "gpt-6-astra",
+    "completed_final_present": true,
+    "report": "/home/ptran/.codex/asclepius-task10/deterministic-judge-fix-20261109/trail-audit.md",
+    "report_sha256": "956d64b36b5eadd2b1ab22acf441b978a06077f4d8f1391f61d422ed2982e6d1",
+    "preaudit_evidence_sha256": "df0b9497c93894590eac44e290462209da64b8b4c77af0c947e67b69833de911",
+    "scope": "Canonical rows197-212 and exact root transcript from2026-11-10T02:10Z through audit dispatch; corrected evidence pointer, no unresolved flags."
+  }
+}
