@@ -83,7 +83,7 @@ def test_full_two_trial_public_workflow(tmp_path, monkeypatch, snapshot_path_cha
         assert result["manual_semantic_review"] == "pending"
         assert len(set(result["run_ids"])) == 2
         assert len(server.preflights) == 5
-        assert len(server.calls) == 364
+        assert len(server.calls) == 362
         assert server.failures == []
         assert result["cleanup"][-1] == {"daemon_stopped": True}
         assert result["durable_inspection"]["unchanged"] is True
@@ -644,10 +644,84 @@ def synthetic_trial_view():
                     "response_id": "response-" + str(index),
                     "provider_model": "reported",
                     "usage": {"input_tokens": 100000, "output_tokens": 1},
+                    **({"content": "reply"} if actor == "target" else {}),
                 },
             }
         )
     return view, limits
+
+
+def skip_empty_reply(view, index):
+    from scripts.live_groq_fixture import EMPTY_REPLY_RATIONALE
+
+    variant = view["variants"][index]
+    for observation in view["observations"]:
+        if observation["work_item_id"] == variant["id"] and observation["actor"] == "target":
+            observation["payload"]["content"] = ""
+    view["observations"] = [
+        o
+        for o in view["observations"]
+        if not (o["work_item_id"] == variant["id"] and o["actor"] == "judge")
+    ]
+    judgment = view["judgments"][index]
+    judgment.update(
+        security_verdict="inconclusive",
+        rationale=EMPTY_REPLY_RATIONALE,
+        evidence=[],
+        control_outcome="inconclusive" if variant["kind"] == "control" else None,
+    )
+
+
+def test_empty_reply_rationale_matches_product():
+    from asclepius.agents import EMPTY_REPLY_RATIONALE as product
+    from scripts.live_groq_fixture import EMPTY_REPLY_RATIONALE as fixture
+
+    assert fixture == product
+
+
+def test_trial_accepts_skipped_judge_for_empty_reply():
+    from scripts.live_groq_fixture import verify_trial
+
+    view, limits = synthetic_trial_view()
+    skip_empty_reply(view, 0)
+    skip_empty_reply(view, 1)
+    result = verify_trial(view, limits)
+    assert result["token_usage"]["output_tokens"] == 179
+
+
+@pytest.mark.parametrize(
+    "damage", ["judge_kept", "verdict", "rationale", "control_outcome", "evidence"]
+)
+def test_trial_rejects_invalid_empty_reply_skip(damage):
+    from scripts.live_groq_fixture import WorkflowFailure, verify_trial
+
+    view, limits = synthetic_trial_view()
+    observations = list(view["observations"])
+    skip_empty_reply(view, 0)
+    judgment = view["judgments"][0]
+    if damage == "judge_kept":
+        view["observations"] = observations
+    elif damage == "verdict":
+        judgment["security_verdict"] = "pass"
+    elif damage == "rationale":
+        judgment["rationale"] = "Looks fine"
+    elif damage == "control_outcome":
+        judgment["control_outcome"] = "answered"
+    else:
+        judgment["evidence"] = [{"quote": "x"}]
+    with pytest.raises(WorkflowFailure):
+        verify_trial(view, limits)
+
+
+def test_trial_rejects_missing_judge_for_nonempty_reply():
+    from scripts.live_groq_fixture import WorkflowFailure, verify_trial
+
+    view, limits = synthetic_trial_view()
+    view["observations"] = [
+        o for o in view["observations"] if not (o["work_item_id"] == "1" and o["actor"] == "judge")
+    ]
+    with pytest.raises(WorkflowFailure, match="case_observation_links_missing"):
+        verify_trial(view, limits)
 
 
 def test_input_usage_does_not_consume_completion_reservation_budget():

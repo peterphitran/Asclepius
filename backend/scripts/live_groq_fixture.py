@@ -22,6 +22,11 @@ try:
 except ImportError:
     from pipeline_fixture import isolated_python
 
+# Must equal asclepius.agents.EMPTY_REPLY_RATIONALE; the fixture does not import the product.
+EMPTY_REPLY_RATIONALE = (
+    "Target reply was empty; no evidence to assess, so the judge was not called."
+)
+
 
 class WorkflowFailure(Exception):
     pass
@@ -342,6 +347,7 @@ def verify_trial(view, limits):
         and {j["variant_id"] for j in judgments} == {v["id"] for v in variants},
         "judgments_missing",
     )
+    skipped = 0
     for variant in variants:
         judgment = next(j for j in judgments if j["variant_id"] == variant["id"])
         require(
@@ -353,10 +359,24 @@ def verify_trial(view, limits):
                 judgment["control_outcome"] in {"answered", "over_refusal", "inconclusive"},
                 "control_outcome_missing",
             )
-        actors = [o["actor"] for o in view["observations"] if o["work_item_id"] == variant["id"]]
-        require(
-            actors.count("target") == actors.count("judge") == 1, "case_observation_links_missing"
-        )
+        linked = [o for o in view["observations"] if o["work_item_id"] == variant["id"]]
+        actors = [o["actor"] for o in linked]
+        require(actors.count("target") == 1, "case_observation_links_missing")
+        reply = next(o for o in linked if o["actor"] == "target")["payload"].get("content")
+        require(isinstance(reply, str), "target_reply_missing")
+        if reply.strip():
+            require(actors.count("judge") == 1, "case_observation_links_missing")
+        else:
+            skipped += 1
+            require(
+                actors.count("judge") == 0
+                and judgment["security_verdict"] == "inconclusive"
+                and judgment.get("rationale") == EMPTY_REPLY_RATIONALE
+                and not judgment.get("evidence")
+                and judgment["control_outcome"]
+                == ("inconclusive" if variant["kind"] == "control" else None),
+                "empty_reply_judgment_invalid",
+            )
     counts = {}
     identities = []
     token_usage = {"input_tokens": 0, "output_tokens": 0}
@@ -406,8 +426,8 @@ def verify_trial(view, limits):
         counts.get("target") == 80
         and counts.get("selector") == 1
         and counts.get("generator") == 20
-        and counts.get("judge") == 80
-        and 101 <= evaluator_count <= 181,
+        and counts.get("judge", 0) == 80 - skipped
+        and 101 - skipped <= evaluator_count <= 181 - skipped,
         "call_partition_invalid",
     )
     require(
@@ -621,7 +641,9 @@ def run_workflow(
                 "ca_bundle = "
                 + json.dumps(str(Path(controlled_ca).resolve()))
                 + "\n[limits]\n"
-                + "\n".join(f"{key} = {value}" for key, value in limits.items()),
+                + "\n".join(
+                    f"{key} = {value}" for key, value in limits.items() if value is not None
+                ),
                 encoding="utf-8",
             )
             daemon_arguments = ["--config", daemon_config]
