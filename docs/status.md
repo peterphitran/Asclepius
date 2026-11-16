@@ -12,7 +12,9 @@ deterministic providers over loopback HTTPS.
 Saved chat observations now retain optional `provider_model` evidence from the response,
 separately from the requested model. Older observations keep this value unknown.
 The [metadata prerequisite record](verification/evidence/cli-provider-model.json) covers
-the offline checks. Hosted Groq behavior and semantic assessment accuracy remain unverified.
+the offline checks. Task 10 live acceptance (2026-11-16) ran the full pack against hosted
+Groq and survived a console window close on native Windows; see
+[verification](verification.md#live-groq-and-terminal-close-acceptance).
 
 This worktree starts from `d13e794` and carries the current documentation. The original
 checkout's frontend deletion and uncommitted backend lifecycle changes remain there,
@@ -50,8 +52,9 @@ API authentication is also current code, not a requirement for the personal CLI.
 
 ## Missing product capabilities
 
-Hosted Groq responses, semantic judgment accuracy, and physical terminal-close acceptance
-remain unverified. Saved comparisons and exports use deterministic fixture evidence in
+Evaluator accuracy beyond the reviewed live runs, a physical human terminal closure, and
+host sleep or shutdown remain unverified. On WSL the daemon stops when WSL shuts its Linux
+side down after the last WSL session closes. Saved comparisons and exports use deterministic fixture evidence in
 [Task 9 verification](verification/evidence/cli-results.json).
 Legacy plans remain readable and can queue, but the role runner requires three strategies
 per check. Legacy judgments without check lineage cannot initiate Reporter. JSON-schema
@@ -63,8 +66,9 @@ daemons, HTTPS fixtures, and SQLite on WSL and native Windows. Task 7 proves nor
 execution. Deterministic fixture judgments do not establish live model accuracy.
 Submission requires a fresh elapsed heartbeat and both live generation locks inside the
 enqueue transaction. Released ownership rejects new queue work after a hard crash.
-Physical terminal-close acceptance remains pending. One native creator-exit test failed
-during review, then passed reruns and ten extra probes; its cause remains unresolved.
+A software-sent console close was survived on native Windows with a completed live run.
+One native creator-exit test failed during review, then passed reruns and ten extra probes;
+its cause remains unresolved.
 
 ## Reuse and migration considerations
 

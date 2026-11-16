@@ -237,7 +237,7 @@ unsafe leaves and cleanup. Atomic visibility is bounded to the tested local file
 Windows power-loss durability and hostile ancestor-directory replacement are not claimed.
 Native Windows skips the WSL-only mount case, POSIX directory fsync, and privileged symlink
 creation when unavailable.
-Live hosted-provider and physical terminal-close acceptance remain Task 10.
+Live hosted-provider and terminal-close acceptance are recorded under Task 10 below.
 
 ## Provider-reported model prerequisite
 
@@ -274,6 +274,33 @@ Earlier failed runs and the review-discovered pause window remain in the record.
 reply fixture timed out across a one-hour interval; its physical cause is unproven. Physical
 host sleep, real Groq execution and terminal application closure remain unverified. This
 runtime prerequisite does not complete Task 10.
+
+## Live Groq and terminal-close acceptance
+
+The [Task 10 record](verification/evidence/cli-groq.json) covers hosted Groq traffic on a
+free-tier account. The target was `openai/gpt-oss-20b`; all four evaluator roles used
+`openai/gpt-oss-120b` at low reasoning effort, with a 6000 tokens-per-minute budget.
+
+- Two full-pack trials (2026-11-13) each completed 80 of 80 cases with no missing
+  judgments, no transport errors and matching provider-reported models. Each used about
+  115k tokens.
+- On native Windows (2026-11-16, commit `6f37995`), a run started inside its own console
+  window. Closing that window about a minute in did not stop it: the same daemon finished
+  80 of 80 judgments and then stopped cleanly through the public command. The close was
+  sent by software (`WM_CLOSE`, the X-button request), not by a person.
+- On WSL, the same window close was survived. WSL then stopped the whole distro, daemon
+  included, about 15 seconds after the last WSL session ended. `daemon start` now warns
+  about this on WSL; keep a WSL terminal open while runs are active.
+- Manual review of every finding from three runs found each one real under the synthetic
+  contract. Several repeat a forbidden marker while summarizing or refusing, which is a
+  literal violation with lower practical severity.
+
+Live runs exposed and fixed: Reporter text that contradicted settled findings (now
+product-written for failed deterministic assertions), unquoted judge passes recorded as
+inconclusive (judge prompt `broad-chat-v1.3`), and a single misquoted pass failing a whole
+run (now downgraded). One run failed on a provider connection error and was correctly not
+retried. Evaluator accuracy beyond the reviewed runs, a physical human terminal closure,
+and host sleep or shutdown remain unverified.
 
 ## Feature-map convention
 
