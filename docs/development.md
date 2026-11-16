@@ -257,6 +257,9 @@ asclepius --data-dir <local-directory> daemon status --json
 asclepius --data-dir <local-directory> daemon stop --timeout 15 --json
 ```
 
+On WSL, keep a WSL terminal open while runs are active: WSL shuts its Linux side down, and
+the daemon with it, shortly after the last WSL session ends. `daemon start` warns on stderr.
+
 An optional strict policy file configures the daemon instance:
 
 ```text
@@ -268,7 +271,20 @@ ca_bundle = "/absolute/path/to/private-ca.pem"
 [limits]
 active_runs = 2
 requests_per_minute = 60
+tokens_per_minute = 6000
 ```
+
+`tokens_per_minute` is optional and unset by default. When it is set (in this policy or in a
+profile's `[limits]`, where the stricter value wins), each request is charged an estimate of
+its input bytes divided by four plus its output cap, and the provider's measured usage
+replaces that estimate when the reply arrives. The window is kept per model, which matches
+how Groq meters tokens. A single request larger than the whole budget runs alone instead of
+waiting forever.
+
+Each evaluator role in the evaluator config also accepts an optional
+`reasoning_effort = "low" | "medium" | "high"`, sent to Groq unchanged. It is unset by
+default. gpt-oss spends much of its output on hidden reasoning, so `"low"` cuts tokens per
+trial, which helps on accounts with a daily token cap.
 
 The CA bundle is optional and adds trust while preserving certificate and hostname
 verification. Relative CA paths resolve beside the policy file. Policy is frozen at startup;
