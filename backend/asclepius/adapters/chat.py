@@ -163,6 +163,9 @@ class GroqConnection:
             "max_completion_tokens": config.max_completion_tokens,
             "stream": False,
         }
+        reasoning_effort = getattr(config, "reasoning_effort", None)
+        if reasoning_effort is not None:
+            body["reasoning_effort"] = reasoning_effort
         if response_format is not None:
             body["response_format"] = response_format
         try:
@@ -221,7 +224,10 @@ class GroqConnection:
             reservation = await self.budgets.reserve(
                 str(request.run_id), kind, config.max_completion_tokens
             )
-            async with self.budgets.slot(self.snapshot, kind, role=role):
+            # Rough upper bound for the tokens-per-minute budget: about 4 bytes per input
+            # token plus the full output cap. Measured usage replaces it after the reply.
+            estimate = -(-len(call.body_json.encode("utf-8")) // 4) + config.max_completion_tokens
+            async with self.budgets.slot(self.snapshot, kind, role=role, tokens=estimate) as lease:
                 phase = "authorizing"
                 await self.budgets.dispatch(reservation)
                 phase = "dispatched"
@@ -234,6 +240,9 @@ class GroqConnection:
                         response_bytes=cap,
                     )
                     payload, truncated = self._parse(data)
+                    used = payload.usage
+                    if used.input_tokens is not None and used.output_tokens is not None:
+                        lease.record(used.input_tokens + used.output_tokens)
                     observation = self._observation(
                         request, started, payload=payload, truncated=truncated
                     )

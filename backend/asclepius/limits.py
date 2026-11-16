@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Literal
 
 import httpx
 
-from asclepius.domain import AppError, BudgetReservation, Limits, RunSnapshot
+from asclepius.domain import AppError, BudgetReservation, Limits, RunSnapshot, tighter
 
 if TYPE_CHECKING:
     from asclepius.storage import Repository
@@ -26,6 +26,18 @@ def resource_identity(endpoint: str) -> tuple[str, str]:
     return origin, origin + (parts.raw_path.decode("ascii").rstrip("/") or "/")
 
 
+class TokenLease:
+    """A slot's entry in the tokens-per-minute windows, charged with an estimate until measured."""
+
+    def __init__(self, entries: list[list[float]]) -> None:
+        self._entries = entries
+
+    def record(self, tokens: int | None) -> None:
+        if tokens is not None:
+            for entry in self._entries:
+                entry[1] = tokens
+
+
 class BudgetManager:
     def __init__(self, repo: Repository, instance_id: str, *, limits: Limits | None = None) -> None:
         self.repo = repo
@@ -33,6 +45,7 @@ class BudgetManager:
         self.limits = limits or Limits()
         self._leases: dict[str, list[int]] = defaultdict(list)
         self._rate: dict[str, deque[float]] = defaultdict(deque)
+        self._tokens: dict[str, deque[list[float]]] = defaultdict(deque)
 
     async def reserve(self, run_id: str, kind: str, max_output: int) -> BudgetReservation:
         reservation = BudgetReservation(run_id=run_id, kind=kind, max_output=max_output)
@@ -79,7 +92,9 @@ class BudgetManager:
             yield
 
     @asynccontextmanager
-    async def slot(self, snapshot: RunSnapshot, kind: Kind, *, role: str | None = None):
+    async def slot(
+        self, snapshot: RunSnapshot, kind: Kind, *, role: str | None = None, tokens: int = 0
+    ):
         if kind not in {"target", "evaluator"}:
             raise AppError(
                 "unsupported_operation", "Cleanup requires a separate budget contract.", 2
@@ -87,11 +102,13 @@ class BudgetManager:
         target = snapshot.profile.target
         if kind == "target":
             endpoint, secret_ref, grouping = target.base_url, target.secret_ref, target.resource_key
+            model = target.model
         else:
             if role not in {"selector", "generator", "judge", "reporter"}:
                 raise AppError("arguments", "Evaluator requests require a named role.", 2)
             config = getattr(snapshot.evaluator.roles, role)
             endpoint, secret_ref, grouping = config.base_url, config.secret_ref, None
+            model = config.model
         origin, destination = resource_identity(endpoint)
         pinned = snapshot.profile.limits
         global_cap = min(self.limits.outbound_concurrency, pinned.outbound_concurrency)
@@ -115,16 +132,31 @@ class BudgetManager:
             if secret_ref:
                 rate_keys.append(f"account:{secret_ref}")
             cap = min(self.limits.requests_per_minute, pinned.requests_per_minute)
+            # Providers such as Groq meter tokens per model, so token windows are per model.
+            token_cap = tighter(self.limits.tokens_per_minute, pinned.tokens_per_minute)
+            token_keys = [f"{key}|model:{model}" for key in rate_keys] if token_cap else []
+            entries: list[list[float]] = []
             while True:
                 await self.checkpoint(snapshot)
                 now = time.monotonic()
                 for key in rate_keys:
                     while self._rate[key] and self._rate[key][0] <= now - 60:
                         self._rate[key].popleft()
-                if all(len(self._rate[key]) < cap for key in rate_keys):
+                for key in token_keys:
+                    while self._tokens[key] and self._tokens[key][0][0] <= now - 60:
+                        self._tokens[key].popleft()
+                # An oversized request runs alone rather than waiting forever.
+                if all(len(self._rate[key]) < cap for key in rate_keys) and all(
+                    not self._tokens[key]
+                    or sum(entry[1] for entry in self._tokens[key]) + tokens <= token_cap
+                    for key in token_keys
+                ):
                     for key in rate_keys:
                         self._rate[key].append(now)
+                    for key in token_keys:
+                        entries.append([now, tokens])
+                        self._tokens[key].append(entries[-1])
                     break
                 await asyncio.sleep(0.05)
             await self.checkpoint(snapshot)
-            yield
+            yield TokenLease(entries)

@@ -720,8 +720,8 @@ def test_cancellation_waiting_for_slot_releases_allowance(
         @asynccontextmanager
         async def waiting_slot(*args, **kwargs):
             waiting.set()
-            async with slot(*args, **kwargs):
-                yield
+            async with slot(*args, **kwargs) as lease:
+                yield lease
 
         def blocked_release(action, write):
             if write and waiting.is_set() and reservations(repo) == [("target", "reserved", 512)]:
@@ -1147,3 +1147,138 @@ def test_metadata_redaction_cannot_materialize_invalid_unicode(groq, tmp_path, m
         assert len(groq[0].calls) == 1
 
     asyncio.run(scenario())
+
+
+def spy_token_leases(budgets):
+    charged = []
+    original = budgets.slot
+
+    @asynccontextmanager
+    async def slot(snapshot, kind, **kwargs):
+        async with original(snapshot, kind, **kwargs) as lease:
+            entry = {"estimate": kwargs.get("tokens"), "measured": []}
+            charged.append(entry)
+            record = lease.record
+
+            def spy(tokens):
+                entry["measured"].append(tokens)
+                record(tokens)
+
+            lease.record = spy
+            yield lease
+
+    budgets.slot = slot
+    return charged
+
+
+@pytest.mark.parametrize("actor", ["target", "judge"])
+def test_token_estimate_is_input_bytes_over_four_plus_output_cap(
+    groq, tmp_path, monkeypatch, actor
+):
+    async def scenario():
+        _, snapshot, work, adapter, gateway = await setup(groq, tmp_path, monkeypatch)
+        charged = spy_token_leases(adapter.connection.budgets)
+        if actor == "target":
+            call = adapter.prepare(request(snapshot, work))
+            await adapter.execute(request(snapshot, work))
+            cap = snapshot.profile.target.max_completion_tokens
+        else:
+            groq[0].body = json.dumps(reply('{"verdict":"pass","score":2}')).encode()
+            call = gateway.prepare("judge", {}, Answer).call
+            await gateway.generate("judge", {}, Answer)
+            cap = snapshot.evaluator.roles.judge.max_completion_tokens
+        size = len(call.body_json.encode("utf-8"))
+        assert charged[0]["estimate"] == -(-size // 4) + cap
+        assert charged[0]["measured"] == [20]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("usage", [None, {"prompt_tokens": 13}, {"completion_tokens": 7}])
+def test_incomplete_usage_keeps_the_token_estimate(groq, tmp_path, monkeypatch, usage):
+    async def scenario():
+        _, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        charged = spy_token_leases(adapter.connection.budgets)
+        data = reply()
+        if usage is None:
+            del data["usage"]
+        else:
+            data["usage"] = usage
+        groq[0].body = json.dumps(data).encode()
+        await adapter.execute(request(snapshot, work))
+        assert charged[0]["measured"] in ([], [None])
+
+    asyncio.run(scenario())
+
+
+def test_provider_error_keeps_the_token_estimate(groq, tmp_path, monkeypatch):
+    async def scenario():
+        _, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        charged = spy_token_leases(adapter.connection.budgets)
+        groq[0].status = 429
+        observation = await adapter.execute(request(snapshot, work))
+        assert observation.error_code == "provider_http_429"
+        assert charged[0]["estimate"] > 0
+        assert charged[0]["measured"] in ([], [None])
+
+    asyncio.run(scenario())
+
+
+def _with_reasoning(snapshot, server, effort):
+    return snapshot.model_copy(
+        update={
+            "evaluator": EvaluatorConfig.model_validate(
+                {
+                    "roles": {
+                        role: {
+                            "model": role + "-model",
+                            "secret_ref": "env:EVALUATOR_KEY",
+                            "base_url": server.origin + "/evaluator",
+                            "reasoning_effort": effort,
+                        }
+                        for role in ("selector", "generator", "judge", "reporter")
+                    }
+                }
+            )
+        }
+    )
+
+
+def test_evaluator_reasoning_effort_is_sent_only_when_configured(groq, tmp_path, monkeypatch):
+    async def scenario():
+        _, snapshot, work, adapter, gateway = await setup(groq, tmp_path, monkeypatch)
+        default = json.loads(gateway.prepare("judge", {}, Answer).call.body_json)
+        assert "reasoning_effort" not in default
+        configured = _with_reasoning(snapshot, groq[0], "low")
+        connection = GroqConnection(configured, adapter.connection.budgets, transport=groq[1])
+        for role in ("selector", "generator", "judge", "reporter"):
+            prepared = ModelGateway(connection, work_item_id=work).prepare(role, {}, Answer)
+            assert json.loads(prepared.call.body_json)["reasoning_effort"] == "low"
+        target_body = json.loads(ChatAdapter(connection).prepare(request(snapshot, work)).body_json)
+        assert "reasoning_effort" not in target_body
+
+    asyncio.run(scenario())
+
+
+def test_reasoning_effort_reaches_the_provider(groq, tmp_path, monkeypatch):
+    async def scenario():
+        _, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        groq[0].body = json.dumps(reply('{"verdict":"pass","score":2}')).encode()
+        configured = _with_reasoning(snapshot, groq[0], "low")
+        connection = GroqConnection(configured, adapter.connection.budgets, transport=groq[1])
+        await ModelGateway(connection, work_item_id=work).generate("judge", {}, Answer)
+        assert groq[0].calls[-1][2]["reasoning_effort"] == "low"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("effort", ["extreme", "", "LOW"])
+def test_reasoning_effort_rejects_unknown_values(effort):
+    from pydantic import ValidationError
+
+    from asclepius.domain import RoleConfig
+
+    with pytest.raises(ValidationError):
+        RoleConfig.model_validate(
+            {"model": "m", "secret_ref": "env:KEY", "reasoning_effort": effort}
+        )

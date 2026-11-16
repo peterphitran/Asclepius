@@ -40,6 +40,7 @@ from asclepius.domain import (
     StageOutput,
     Variant,
     allowed_transition,
+    tighter,
 )
 from asclepius.elapsed_clock import Tick, elapsed_clock
 from asclepius.maintenance import (
@@ -449,7 +450,7 @@ class Repository:
             if runtime_limits is not None:
                 limits = Limits(
                     **{
-                        key: min(value, getattr(runtime_limits, key))
+                        key: tighter(value, getattr(runtime_limits, key))
                         for key, value in limits.model_dump().items()
                     }
                 )

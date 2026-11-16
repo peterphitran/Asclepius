@@ -117,6 +117,13 @@ def allowed_transition(current: RunState, next_state: RunState) -> RunState:
     return next_state
 
 
+def tighter(first: int | None, second: int | None) -> int | None:
+    """Return the stricter of two optional caps, where None means no cap."""
+    if first is None or second is None:
+        return second if first is None else first
+    return min(first, second)
+
+
 class Limits(Contract):
     active_runs: PositiveInt = 1
     outbound_concurrency: PositiveInt = 4
@@ -126,6 +133,7 @@ class Limits(Contract):
     evaluator_calls: PositiveInt = 220
     total_calls: PositiveInt = 300
     requests_per_minute: PositiveInt = 10
+    tokens_per_minute: PositiveInt | None = None
     request_timeout_seconds: PositiveInt = 60
     run_timeout_seconds: PositiveInt = 2700
     completion_tokens: PositiveInt = 500000
@@ -168,6 +176,8 @@ class RoleConfig(Contract):
     secret_ref: SecretRef
     temperature: Annotated[float, Field(ge=0, le=2)] = 0
     max_completion_tokens: PositiveInt = 2048
+    # Sent to Groq as-is when set; gpt-oss spends much of its output on hidden reasoning.
+    reasoning_effort: Literal["low", "medium", "high"] | None = None
 
     @model_validator(mode="after")
     def validate_hosted_endpoint(self) -> "RoleConfig":

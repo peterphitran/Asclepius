@@ -339,3 +339,157 @@ def test_runtime_deadline_is_checked_before_dispatch_authorization(tmp_path):
         await manager.release(reservation)
 
     asyncio.run(scenario())
+
+
+async def _blocked(manager, snapshot, kind="target", **kwargs):
+    entered = asyncio.Event()
+
+    async def waiting():
+        async with manager.slot(snapshot, kind, **kwargs):
+            entered.set()
+
+    waiter = asyncio.create_task(waiting())
+    try:
+        await asyncio.sleep(0.2)
+        return not entered.is_set()
+    finally:
+        waiter.cancel()
+        await asyncio.gather(waiter, return_exceptions=True)
+
+
+def test_token_budget_holds_requests_that_would_exceed_tokens_per_minute(tmp_path):
+    async def scenario():
+        repo, snapshot, _ = await prepare(tmp_path)
+        manager = BudgetManager(repo, OWNER, limits=Limits(tokens_per_minute=1000))
+        async with manager.slot(snapshot, "target", tokens=600):
+            pass
+        assert await _blocked(manager, snapshot, tokens=500)
+        async with asyncio.timeout(1):
+            async with manager.slot(snapshot, "target", tokens=400):
+                pass
+
+    run(scenario())
+
+
+def test_measured_usage_replaces_the_token_estimate(tmp_path):
+    async def scenario():
+        repo, snapshot, _ = await prepare(tmp_path)
+        manager = BudgetManager(repo, OWNER, limits=Limits(tokens_per_minute=1000))
+        async with manager.slot(snapshot, "target", tokens=900) as lease:
+            lease.record(100)
+        async with asyncio.timeout(1):
+            async with manager.slot(snapshot, "target", tokens=800):
+                pass
+        assert await _blocked(manager, snapshot, tokens=200)
+
+    run(scenario())
+
+
+def test_unmeasured_usage_keeps_the_token_estimate(tmp_path):
+    async def scenario():
+        repo, snapshot, _ = await prepare(tmp_path)
+        manager = BudgetManager(repo, OWNER, limits=Limits(tokens_per_minute=1000))
+        async with manager.slot(snapshot, "target", tokens=900) as lease:
+            lease.record(None)
+        assert await _blocked(manager, snapshot, tokens=200)
+
+    run(scenario())
+
+
+def test_oversized_request_runs_alone_instead_of_waiting_forever(tmp_path):
+    async def scenario():
+        repo, snapshot, _ = await prepare(tmp_path)
+        manager = BudgetManager(repo, OWNER, limits=Limits(tokens_per_minute=1000))
+        async with asyncio.timeout(1):
+            async with manager.slot(snapshot, "target", tokens=5000):
+                pass
+        assert await _blocked(manager, snapshot, tokens=1)
+
+    run(scenario())
+
+
+def test_token_budget_is_kept_per_model(tmp_path):
+    async def scenario():
+        repo, snapshot, _ = await prepare(tmp_path)
+        manager = BudgetManager(repo, OWNER, limits=Limits(tokens_per_minute=1000))
+        async with manager.slot(snapshot, "target", tokens=1000):
+            pass
+        other_model = snapshot.model_copy(
+            update={
+                "profile": snapshot.profile.model_copy(
+                    update={"target": snapshot.profile.target.model_copy(update={"model": "other"})}
+                )
+            }
+        )
+        async with asyncio.timeout(1):
+            async with manager.slot(other_model, "target", tokens=1000):
+                pass
+        assert await _blocked(manager, snapshot, tokens=1)
+
+    run(scenario())
+
+
+def test_pinned_profile_token_budget_applies_when_runtime_has_none(tmp_path):
+    async def scenario():
+        repo, snapshot, _ = await prepare(tmp_path)
+        pinned = snapshot.model_copy(
+            update={
+                "profile": snapshot.profile.model_copy(
+                    update={
+                        "limits": snapshot.profile.limits.model_copy(
+                            update={"tokens_per_minute": 1000}
+                        )
+                    }
+                )
+            }
+        )
+        manager = BudgetManager(repo, OWNER)
+        async with manager.slot(pinned, "target", tokens=1000):
+            pass
+        assert await _blocked(manager, pinned, tokens=1)
+
+    run(scenario())
+
+
+def test_without_token_budget_token_estimates_never_block(tmp_path):
+    async def scenario():
+        repo, snapshot, _ = await prepare(tmp_path)
+        manager = BudgetManager(repo, OWNER)
+        async with asyncio.timeout(1):
+            for _ in range(3):
+                async with manager.slot(snapshot, "target", tokens=10**9):
+                    pass
+
+    run(scenario())
+
+
+def test_token_wait_stops_promptly_on_run_cancellation(tmp_path):
+    async def scenario():
+        repo, snapshot, _ = await prepare(tmp_path)
+        manager = BudgetManager(repo, OWNER, limits=Limits(tokens_per_minute=10))
+        async with manager.slot(snapshot, "target", tokens=10):
+            pass
+
+        async def waiting():
+            async with manager.slot(snapshot, "target", tokens=1):
+                raise AssertionError("Cancelled token waiter dispatched")
+
+        waiter = asyncio.create_task(waiting())
+        await asyncio.sleep(0.1)
+        await repo.request_cancel(str(snapshot.id))
+        with pytest.raises(AppError) as error:
+            await asyncio.wait_for(waiter, 2)
+        assert error.value.code == "run_cancelled"
+
+    run(scenario())
+
+
+def test_runtime_token_budget_merges_with_unset_pinned_value_in_storage(tmp_path):
+    async def scenario():
+        repo, snapshot, _ = await prepare(tmp_path)
+        manager = BudgetManager(repo, OWNER, limits=Limits(tokens_per_minute=1000))
+        reservation = await manager.reserve(str(snapshot.id), "target", 20)
+        await manager.dispatch(reservation)
+        await manager.settle(reservation)
+
+    run(scenario())
