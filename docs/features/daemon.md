@@ -38,6 +38,11 @@ that incomplete runs are marked interrupted, while queued runs remain available.
 ## Gotchas
 
 - Computer sleep and shutdown interrupt computation.
+- On WSL, keep a WSL terminal open while runs are active. WSL stops its Linux side,
+  including the detached daemon, shortly after its last terminal or session closes. A live
+  check on 2026-11-14 saw the daemon killed about 15 seconds after that, mid-run, leaving the
+  run marked running. `daemon start` prints a warning to stderr on WSL; the JSON output is
+  unchanged. Closing the creating terminal alone is survived while another WSL session is open.
 - A startup message alone does not prove a usable worker.
 - A stale heartbeat alone cannot prove that instance ownership has been released.
 - Enqueue and claim require the current generation's held locks and an elapsed heartbeat

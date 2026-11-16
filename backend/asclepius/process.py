@@ -11,6 +11,19 @@ from asclepius.domain import AppError, DaemonStatus
 from asclepius.paths import local_directory
 from asclepius.storage import Repository
 
+WSL_DAEMON_WARNING = (
+    "Warning: on WSL the daemon stops when WSL shuts down, which happens shortly after the "
+    "last WSL terminal or session closes. Keep a WSL terminal open while runs are active."
+)
+
+
+def running_under_wsl() -> bool:
+    """WSL stops its Linux side, detached processes included, soon after its last session ends."""
+    try:
+        return "microsoft" in Path("/proc/sys/kernel/osrelease").read_text().lower()
+    except OSError:
+        return False
+
 
 def daemon_status(data_dir: Path) -> DaemonStatus:
     return asyncio.run(Repository(data_dir).daemon_status())

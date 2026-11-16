@@ -12,7 +12,13 @@ from asclepius.config import data_directory, load_evaluator, load_plan, load_tar
 from asclepius.domain import AppError, RunState
 from asclepius.exports import render_report, safe_terminal, write_export
 from asclepius.maintenance import migrate_storage
-from asclepius.process import daemon_status, start_daemon, stop_daemon
+from asclepius.process import (
+    WSL_DAEMON_WARNING,
+    daemon_status,
+    running_under_wsl,
+    start_daemon,
+    stop_daemon,
+)
 from asclepius.results import compare_runs
 from asclepius.services import EvaluationService
 from asclepius.storage import Repository
@@ -128,6 +134,9 @@ async def dispatch(options, json_output: bool) -> None:
                 timeout=options.timeout,
                 **({"config": options.config} if options.action == "start" else {}),
             )
+            if options.action == "start" and running_under_wsl():
+                # Stderr keeps the JSON envelope on stdout unchanged.
+                print(WSL_DAEMON_WARNING, file=sys.stderr, flush=True)
     elif command == "targets":
         if options.action == "add":
             config = load_target(options.config)

@@ -255,3 +255,38 @@ def test_restart_waiting_on_sqlite_does_not_make_old_ready_generation_live(tmp_p
         assert str(first_result[0].instance_id) != old_id
     finally:
         stop_daemon(tmp_path, timeout=5)
+
+
+@pytest.mark.parametrize(
+    ("release", "expected"),
+    [("5.15.167.4-microsoft-standard-WSL2", True), ("6.8.0-45-generic", False), (None, False)],
+)
+def test_wsl_detection_reads_the_kernel_release(monkeypatch, release, expected):
+    import asclepius.process as process
+
+    class FakePath:
+        def __init__(self, path):
+            assert path == "/proc/sys/kernel/osrelease"
+
+        def read_text(self):
+            if release is None:
+                raise OSError("not Linux")
+            return release
+
+    monkeypatch.setattr(process, "Path", FakePath)
+    assert process.running_under_wsl() is expected
+
+
+@pytest.mark.parametrize("wsl", [True, False])
+def test_daemon_start_warns_on_wsl_without_changing_json(tmp_path, monkeypatch, capsys, wsl):
+    # Live check 2026-11-14: WSL stopped its Linux side about 15 s after the last session
+    # ended and killed the detached daemon mid-run.
+    import asclepius.cli as cli
+    from asclepius.process import WSL_DAEMON_WARNING
+
+    monkeypatch.setattr(cli, "start_daemon", lambda data_dir, **options: {"state": "ready"})
+    monkeypatch.setattr(cli, "running_under_wsl", lambda: wsl)
+    assert cli.main(["--data-dir", str(tmp_path), "--json", "daemon", "start"]) == 0
+    out, err = capsys.readouterr()
+    assert json.loads(out) == {"schema_version": 1, "ok": True, "data": {"state": "ready"}}
+    assert (WSL_DAEMON_WARNING in err) is wsl
