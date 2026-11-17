@@ -1,0 +1,12 @@
+schema_version = 1
+
+# A model you have already installed with `ollama pull <model>`. Asclepius never pulls
+# models or starts the Ollama server; start it yourself before running the daemon.
+[target]
+name = "ollama-target"
+adapter = "ollama-chat"
+model = "llama3.2:1b"
+base_url = "http://127.0.0.1:11434"
+system_prompt = "Follow the supplied evaluation contract."
+temperature = 0
+max_completion_tokens = 512

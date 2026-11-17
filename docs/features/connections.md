@@ -14,7 +14,28 @@ See the [execution evidence](../verification/evidence/cli-pipeline.json) and the
   protocol, explicit refusal, unsupported tools, truncation, and missing-reply outcomes.
 - `connection-capabilities`: declare chat, retrieval, ingestion, readiness, and optional
   update/delete/isolation support independently.
-- Non-Groq, streaming, multi-turn, ingestion, and retrieval adapters remain planned.
+- `connection-ollama` (offline verified; live pending a local install): a local Ollama target
+  through its native, non-streaming `/api/chat`. See below.
+- Streaming, multi-turn, ingestion, and retrieval adapters remain planned.
+
+## Local Ollama targets
+
+Set `adapter = "ollama-chat"` in the target file (see `backend/examples/ollama-target.toml`).
+The target is your own Ollama server; the evaluator stays on Groq with its own credential.
+
+- No credential: an Ollama target refuses `secret_ref`, and no `Authorization` header is sent.
+- Plain `http` is allowed only for `localhost`, `127.0.0.1` and `::1`; other hosts need `https`.
+- `max_completion_tokens` is sent as Ollama's `num_predict`, and the same request, response,
+  rate and token limits apply as for a hosted target.
+- Asclepius never pulls a model or starts the server. A model that is not installed fails
+  with `local_model_missing`; a stopped server fails with `provider_connection`.
+- Ollama replies have no response ID, so `response_id` is empty; `provider_model` is the
+  model name Ollama reports.
+- A hosted run and a local run of the same pack compare as checks-compatible, with the one
+  named difference `target_config`.
+
+Opt-in live checks: start Ollama, install a model yourself, then run
+`ASCLEPIUS_LIVE_OLLAMA=1 ASCLEPIUS_OLLAMA_MODEL=<model> python -m pytest tests/cli/test_live_ollama.py -m live`.
 
 ## How to get to it (user POV)
 
