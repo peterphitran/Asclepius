@@ -552,12 +552,9 @@ class AgentRunner:
         if failed:
             if verdict != "weakness" or not _supports_facts(check, facts, evidence, observation):
                 # A failed deterministic assertion on a complete reply is proof on its own, so the
-                # product settles the verdict and quotes the failing content itself.
-                if (
-                    check.assessment_mode != "deterministic"
-                    or incomplete
-                    or p.control_outcome == "over_refusal"
-                ):
+                # product settles the verdict and quotes the failing content itself. This holds
+                # for judge-graded checks too: a protected literal in the reply fails the check.
+                if incomplete or p.control_outcome == "over_refusal":
                     raise RoleOutputError(result)
                 evidence = _fact_evidence(check, facts, observation)
                 try:
@@ -603,7 +600,7 @@ class AgentRunner:
                     outcome={"pass": "met", "weakness": "not_met", "inconclusive": "inconclusive"}[
                         verdict
                     ],
-                    rationale=p.rationale,
+                    rationale=rationale,
                 ),
             )
         return Judgment(
