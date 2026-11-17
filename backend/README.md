@@ -1,8 +1,7 @@
 # Backend
 
-The CLI foundation provides help and configuration validation through `asclepius` and
-`python -m asclepius`. Evaluation commands remain unimplemented and return an explicit error.
-The legacy Python API remains separate from the new `asclepius` package.
-The [backend design](../docs/specs/backend-design.md) defines the planned replacement.
-Use [implementation status](../docs/status.md), [development setup](../docs/development.md),
-and the [API reference](../docs/reference/existing-api.md) for the existing code.
+The `asclepius` package is the whole runtime: run `asclepius` or `python -m asclepius` for
+help, profiles, evaluation runs, history, findings, comparisons and reports. It stores
+everything in a local SQLite directory and needs no database server, web API or Docker.
+Examples live in `examples/`. Use [implementation status](../docs/status.md) and
+[development setup](../docs/development.md) for current behavior and commands.

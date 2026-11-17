@@ -361,49 +361,15 @@ From `backend/`, with the chosen environment active:
 python -m pip install -e ".[dev]"
 ```
 
-Settings load from environment variables or `backend/.env`; inspect
-[config.py](../backend/app/config.py) and [.env.example](../backend/.env.example).
-The latter still reflects the existing API configuration.
-
-## Start and inspect the API
-
-```text
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-From another terminal:
-
-```bash
-curl --fail-with-body http://127.0.0.1:8000/health
-curl --fail-with-body http://127.0.0.1:8000/openapi.json
-```
-
-Interactive API docs are at `http://127.0.0.1:8000/docs`. Stop an instance you launched
-with Ctrl+C. API health does not check database or evaluation readiness.
-
-## Database-backed paths
-
-From `backend/`, using a disposable development Postgres database:
-
-```text
-docker compose up -d postgres
-python -m alembic upgrade head
-python -m alembic current
-```
-
-These commands change the database selected by `DATABASE_URL`. They do not create
-the future SQLite store. API data routes require a matching schema and authenticated
-fixture user. Redis does not need to be started for current application execution.
-
-`python -m app.seed` clears domain tables and inserts demo records. It is optional,
-destructive to those records, and unsuitable for a database containing work to keep.
+Provider credentials come from the environment variables named by `secret_ref` in the
+target and evaluator files. No `.env` file, database server or Docker service is used.
 
 ## Checks
 
 ```text
 python -m pytest
-python -m ruff check app tests
+python -m ruff check asclepius tests scripts
 ```
 
 Use the [verification guide](verification.md) to distinguish source checks, unit tests,
-API behavior, and a future complete CLI evaluation.
+fixture runs and live provider acceptance.

@@ -10,8 +10,7 @@
 | [Implementation plan](plans/2026-10-21-cli-evaluator.md) | Reviewable defaults, file ownership, task order, and hosted/Ollama acceptance gates. Task 1 verified; runtime execution still pending. |
 | [Status](status.md) | Current implementation, reusable pieces, and transition gaps. |
 | [Feature map](features/README.md) | User actions and their feature-specific verification paths. |
-| [Development](development.md) | Environment setup, API startup, migrations, and test commands. |
-| [API reference](reference/existing-api.md) | Existing HTTP operations and their limitations. |
+| [Development](development.md) | Environment setup, CLI and daemon commands, migrations, and test commands. |
 | [Verification](verification.md) | Shared proof standards, recorded checks, and map provenance. |
 
 Read the product and status pages first, then only the feature area relevant to your task.
@@ -19,8 +18,7 @@ Read the product and status pages first, then only the feature area relevant to 
 ## Documentation rules
 
 - Define each fact in its owning document; link to it elsewhere.
-- Use the product vocabulary for planned features. Keep old code identifiers only in
-  status and API reference where they help locate implementation.
+- Use the product vocabulary for planned features.
 - Mark design candidates as proposed and commands as illustrative until implemented.
 - Record code changes in status; record observed behavior in verification evidence.
 - Put technical specs under `docs/specs/` and implementation plans under `docs/plans/`.

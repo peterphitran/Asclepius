@@ -29,5 +29,3 @@ The [design review](../specs/design-review.md) tracks proposed defaults and open
 Each feature page states which parts are implemented and which remain planned. A partial
 implementation does not establish the full user journey. Update entry points and evidence
 when behavior becomes usable.
-
-Existing HTTP operations are documented separately in the [API reference](../reference/existing-api.md).

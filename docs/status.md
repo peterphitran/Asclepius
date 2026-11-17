@@ -16,11 +16,11 @@ the offline checks. Task 10 live acceptance (2026-11-16) ran the full pack again
 Groq and survived a console window close on native Windows; see
 [verification](verification.md#live-groq-and-terminal-close-acceptance).
 
-This worktree starts from `d13e794` and carries the current documentation. The original
-checkout's frontend deletion and uncommitted backend lifecycle changes remain there,
-untouched. They are not included in this branch. This worktree still contains the inherited
-frontend files, which the new CLI does not use. Do not mistake this for restoring or
-discarding the original removal work.
+Task 11 adds local Ollama targets with Groq as the evaluator. Task 12 retired the legacy
+web runtime: the FastAPI app, Postgres models and Alembic migrations, Docker Compose file,
+web frontend, legacy API tests and API reference are removed, with their dependencies. They
+remain in git history. The original checkout's uncommitted sweep-lifecycle work for that
+API is preserved on the local branch `wip/legacy-sweep-lifecycle`.
 
 ## Existing code
 
@@ -31,24 +31,11 @@ discarding the original removal work.
 | Local storage | `backend/asclepius/storage.py` | SQLite snapshots, paginated reads, profile tombstones, claims, fenced writes, atomic stage/evidence commits, and orphan interruption. Coordinator uses these transactions for execution. |
 | Daemon control | `backend/asclepius/process.py`, `daemon.py` | Manual detached start, generation-bound readiness, heartbeat, duplicate exclusion, drain/stop. Claims within shared limits, heartbeats independently, and drains active work. |
 | Bounds | `backend/asclepius/limits.py` | Shared request gates/rates and durable call/completion reservations, connected to provider components. Cancellation before dispatch releases allowance; uncertain dispatch retains it. |
-| Provider components | `backend/asclepius/transport.py`, `adapters/chat.py`, `models.py` | Bounded HTTPS, independent credentials, redacted immutable requests, strict evaluator schemas, typed errors and validated retry timing. No automatic retries; coordinator persists their evidence. |
+| Provider components | `backend/asclepius/transport.py`, `adapters/chat.py`, `adapters/ollama.py`, `models.py` | Bounded HTTPS (plain HTTP only on loopback for a local Ollama target), independent credentials, redacted immutable requests, strict evaluator schemas, typed errors and validated retry timing. No automatic retries; coordinator persists their evidence. |
 | Saved results and exports | `backend/asclepius/results.py`, `exports.py` | Coherent comparison summaries, separate attack/control/legacy outcomes, inert JSON/Markdown/HTML and atomic local publication. |
 | Checks and agents | `backend/asclepius/checks.py`, `agents.py`, `packs/`, `prompts/` | Twenty pinned checks, three generated attacks and one code-owned control per check. Four role contracts require an injected prepared-request dispatch. Coordinator supplies durable dispatch. |
 | Local migrations | `backend/asclepius/maintenance.py`, `migrations/` | New schema v4 and explicit stopped v1/v2/v3 upgrade, OS/maintenance locking, rollback, and local-only path policy. |
-| API | `backend/app/api/` | Auth, target, campaign, sweep, finding, review, summary, and health routes. |
-| Data | `backend/app/models/`, `backend/app/db.py` | Organization-scoped Postgres records through async SQLAlchemy. |
-| Migrations | `backend/alembic/` | Inherited Postgres revisions; current database revision is not verified. |
-| Fixtures | `backend/app/seed.py` | Resets domain data and inserts simulated records. |
-| Infrastructure | `backend/docker-compose.yml` | Postgres and Redis containers; Redis is unused by execution. |
-| Tests | `backend/tests/` | Real HTTP/HTTPS provider fixtures, SQLite persistence and budgets, process checks, and legacy API cases. See the [Task 7 execution results](verification/evidence/cli-pipeline.json) and [Task 8 recovery results](verification/evidence/cli-recovery.json). Native Windows skips the WSL-only mount test. |
-
-Campaign creation stores queued records and returns an identifier. Nothing dispatches
-them to a worker or sends evaluation requests to a target.
-
-The existing API calls runs `sweeps` and stores `campaigns`; those identifiers describe
-current code. The [backend design](specs/backend-design.md) defines their replacement
-with profile/run domain records and a separate execution coordinator.
-API authentication is also current code, not a requirement for the personal CLI.
+| Tests | `backend/tests/cli/` | Real HTTP/HTTPS provider fixtures, SQLite persistence and budgets, process checks, and a check that the CLI runs with every legacy web dependency blocked. See the [Task 7 execution results](verification/evidence/cli-pipeline.json) and [Task 8 recovery results](verification/evidence/cli-recovery.json). Native Windows skips the WSL-only mount test. |
 
 ## Missing product capabilities
 
@@ -70,23 +57,5 @@ A software-sent console close was survived on native Windows with a completed li
 One native creator-exit test failed during review, then passed reruns and ten extra probes;
 its cause remains unresolved.
 
-## Reuse and migration considerations
-
-The backend design contains the runtime transition decisions. The following constraints
-describe source behavior that implementation must account for.
-
-- The original checkout's uncommitted lifecycle operations are a possible starting point, but their Postgres row
-  locks do not provide a SQLite scheduler automatically.
-- Fake-session tests do not prove concurrent claims, restart recovery, or duplicate prevention.
-  Those original-checkout step helpers lack persisted per-variant uniqueness.
-- Target records currently store endpoint/model/environment labels without request
-  mapping, credentials, or a real connection probe.
-- Legacy findings contain clinical-specific fields and simulated evidence. Generic result
-  contracts and SQLite relationships now exist; legacy finding migration or retirement remains pending.
-- Review mutations lack role checks, pending-state enforcement, and reviewer audit history.
-  Retaining that workflow is undecided.
-- Postgres-specific types, existing tenancy, and authentication need explicit reuse/retirement decisions.
-
-For endpoint details see the [API reference](reference/existing-api.md).
 For tested observations and limits see [verification](verification.md). Source presence
 and old passing-test reports do not establish a complete evaluation system.
