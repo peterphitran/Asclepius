@@ -341,6 +341,58 @@ def provider(directory, certificate_dir, **options):
         thread.join(5)
 
 
+class _OllamaHandler(BaseHTTPRequestHandler):
+    """Plain-HTTP local target in Ollama's native shape, checked by the hosted fixture."""
+
+    def log_message(self, *args):
+        pass
+
+    def do_POST(self):
+        hosted = self.server.hosted
+        try:
+            assert self.path == "/api/chat", "Local target used an unexpected path"
+            assert "Authorization" not in self.headers, "Local target received a credential"
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            status, reply = hosted.respond(body)
+            if status == 200:
+                choice = reply["choices"][0]
+                reply = {
+                    "model": "fixture-local-" + body["model"],
+                    "message": {"role": "assistant", "content": choice["message"]["content"]},
+                    "done": True,
+                    "done_reason": choice["finish_reason"],
+                    "prompt_eval_count": 5,
+                    "eval_count": 3,
+                }
+        except Exception as error:
+            hosted.failures.append(str(error))
+            status, reply = 500, {"error": "fixture invariant failed"}
+        data = json.dumps(reply).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+
+@contextmanager
+def ollama_provider(hosted):
+    """Serve a local Ollama-style target that records calls on the hosted fixture."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _OllamaHandler)
+    server.hosted = hosted
+    server.origin = f"http://127.0.0.1:{server.server_port}"
+    thread = threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
+    )
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)
+
+
 def configure(root, server, certificate_dir, *, aliases=("fixture",), daemon_key=True, limits=None):
     root.mkdir(parents=True, exist_ok=True)
     directory = root / "store"
