@@ -13,15 +13,6 @@ dependencies = [
     "jsonschema>=4.23,<5",
     "referencing>=0.35,<1",
     "portalocker[win32]>=4,<5",
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.34",
-    "pydantic-settings>=2.6",
-    "sqlalchemy[asyncio]>=2.0",
-    "asyncpg>=0.30",
-    "alembic>=1.14",
-    "pyjwt>=2.9",
-    "bcrypt>=4.2",
-    "python-multipart>=0.0.9",
 ]
 
 [project.scripts]
@@ -36,21 +27,17 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["app", "asclepius"]
+packages = ["asclepius"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app"]
-
-[tool.ruff.lint.per-file-ignores]
-"app/seed.py" = ["E501"]
+known-first-party = ["asclepius"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
