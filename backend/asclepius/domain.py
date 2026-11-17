@@ -160,6 +160,8 @@ class TargetConfig(Contract):
             raise ValueError("Hosted target requires a secret reference.")
         if self.adapter == "groq-chat" and urlsplit(self.base_url).scheme != "https":
             raise ValueError("Hosted endpoints require HTTPS.")
+        if self.adapter == "ollama-chat" and self.secret_ref is not None:
+            raise ValueError("Local Ollama targets do not use a credential.")
         return self
 
 

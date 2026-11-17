@@ -49,17 +49,23 @@ class JsonTransport:
         endpoint: str,
         payload: dict,
         *,
-        secret: str,
+        secret: str | None,
         deadline_seconds: float,
         response_bytes: int,
     ) -> dict:
+        """POST JSON. `secret=None` sends no Authorization header (local targets only)."""
         try:
             TypeAdapter(Endpoint).validate_python(endpoint)
             httpx.URL(endpoint)
         except (ValidationError, httpx.InvalidURL):
             raise AppError("transport_config", "Invalid provider endpoint.", 2) from None
-        if not secret or any(ord(char) < 33 or ord(char) > 126 for char in secret):
+        if secret is not None and (
+            not secret or any(ord(char) < 33 or ord(char) > 126 for char in secret)
+        ):
             raise AppError("secret_invalid", "Provider secret is missing or invalid.", 2)
+        headers = {"Accept-Encoding": "identity"}
+        if secret is not None:
+            headers["Authorization"] = f"Bearer {secret}"
         if deadline_seconds <= 0 or response_bytes <= 0:
             raise AppError("transport_config", "Transport limits must be positive.", 2)
         _install_log_filters()
@@ -80,15 +86,12 @@ class JsonTransport:
                         "POST",
                         endpoint,
                         json=payload,
-                        headers={
-                            "Authorization": f"Bearer {secret}",
-                            "Accept-Encoding": "identity",
-                        },
+                        headers=headers,
                     ) as response:
                         if not 200 <= response.status_code < 300:
                             retry_after = None
                             values = response.headers.get_list("Retry-After")
-                            if len(values) == 1 and secret not in values[0]:
+                            if len(values) == 1 and (secret is None or secret not in values[0]):
                                 try:
                                     retry_after = TypeAdapter(RetryAfter).validate_python(values[0])
                                 except ValidationError:
