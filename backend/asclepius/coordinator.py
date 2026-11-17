@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from asclepius.adapters.chat import ChatAdapter, DispatchFailure, GroqConnection, PreparedCall
+from asclepius.adapters.ollama import OllamaAdapter
 from asclepius.agents import AgentRunner, check_work_item, selector_work_item
 from asclepius.checks import validate_assertions
 from asclepius.domain import (
@@ -65,7 +66,9 @@ class _RunSession:
         await self.repo.save_observation(observation, instance_id=self.budgets.instance_id)
 
     async def target(self, variant: Variant) -> Observation:
-        call = ChatAdapter(self.connection).prepare(
+        local = self.snapshot.profile.target.adapter == "ollama-chat"
+        adapter = OllamaAdapter if local else ChatAdapter
+        call = adapter(self.connection).prepare(
             OperationRequest(
                 run_id=self.snapshot.id, work_item_id=variant.id, payload=variant.payload
             )

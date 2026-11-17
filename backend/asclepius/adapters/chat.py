@@ -64,6 +64,11 @@ class _Reply(_WireModel):
     usage: _Usage | None = None
 
 
+def _is_local(actor: str, config) -> bool:
+    """A local Ollama target: no credential, native wire format, same budgets and limits."""
+    return actor == "target" and config.adapter == "ollama-chat"
+
+
 class DispatchFailure(AppError):
     def __init__(
         self, code: str, observation: Observation, *, settlement_failed: bool = False
@@ -136,8 +141,8 @@ class GroqConnection:
     def _config(self, actor: str):
         if actor == "target":
             config = self.snapshot.profile.target
-            if config.adapter != "groq-chat":
-                raise AppError("unsupported_adapter", "This connection requires a Groq target.", 2)
+            if config.adapter not in {"groq-chat", "ollama-chat"}:
+                raise AppError("unsupported_adapter", "Unsupported target adapter.", 2)
             return config
         if actor not in ROLES:
             raise AppError("arguments", "Unknown evaluator role.", 2)
@@ -156,13 +161,19 @@ class GroqConnection:
             for item in request.payload.messages
         )
         payload = ChatInput(messages=messages)
-        body = {
-            "model": config.model,
-            "messages": payload.model_dump(mode="json")["messages"],
-            "temperature": config.temperature,
-            "max_completion_tokens": config.max_completion_tokens,
-            "stream": False,
-        }
+        wire_messages = payload.model_dump(mode="json")["messages"]
+        if _is_local(request.actor, config):
+            from asclepius.adapters import ollama
+
+            body = ollama.request_body(config, wire_messages)
+        else:
+            body = {
+                "model": config.model,
+                "messages": wire_messages,
+                "temperature": config.temperature,
+                "max_completion_tokens": config.max_completion_tokens,
+                "stream": False,
+            }
         reasoning_effort = getattr(config, "reasoning_effort", None)
         if reasoning_effort is not None:
             body["reasoning_effort"] = reasoning_effort
@@ -192,6 +203,8 @@ class GroqConnection:
     def validate_credentials(self) -> None:
         for actor in ("target", *sorted(ROLES)):
             config = self._config(actor)
+            if _is_local(actor, config):
+                continue
             secret = self._secrets.get(config.secret_ref)
             if not secret:
                 raise AppError("secret_missing", "Selected provider credential is unavailable.", 2)
@@ -203,16 +216,21 @@ class GroqConnection:
         if request.run_id != self.snapshot.id:
             raise AppError("operation_identity", "Operation belongs to another run.", 2)
         config = self._config(request.actor)
+        local = _is_local(request.actor, config)
         started = datetime.now(UTC)
         phase: Literal["reserved", "authorizing", "dispatched"] = "reserved"
         reservation = None
         observation = None
         try:
-            secret = self._secrets.get(config.secret_ref)
-            if not secret:
-                raise AppError("secret_missing", "Selected provider credential is unavailable.", 2)
-            if any(ord(char) < 33 or ord(char) > 126 for char in secret):
-                raise AppError("secret_invalid", "Selected provider credential is invalid.", 2)
+            secret = None
+            if not local:
+                secret = self._secrets.get(config.secret_ref)
+                if not secret:
+                    raise AppError(
+                        "secret_missing", "Selected provider credential is unavailable.", 2
+                    )
+                if any(ord(char) < 33 or ord(char) > 126 for char in secret):
+                    raise AppError("secret_invalid", "Selected provider credential is invalid.", 2)
             body = json.loads(call.body_json)
             kind = "target" if request.actor == "target" else "evaluator"
             role = None if kind == "target" else request.actor
@@ -232,13 +250,30 @@ class GroqConnection:
                 await self.budgets.dispatch(reservation)
                 phase = "dispatched"
                 try:
-                    data = await self.transport.post(
-                        config.base_url.rstrip("/") + "/chat/completions",
-                        body,
-                        secret=secret,
-                        deadline_seconds=deadline,
-                        response_bytes=cap,
-                    )
+                    if local:
+                        from asclepius.adapters import ollama
+
+                        url = ollama.chat_url(config.base_url)
+                    else:
+                        url = config.base_url.rstrip("/") + "/chat/completions"
+                    try:
+                        data = await self.transport.post(
+                            url,
+                            body,
+                            secret=secret,
+                            deadline_seconds=deadline,
+                            response_bytes=cap,
+                        )
+                    except ProviderHttpError as error:
+                        # Ollama answers 404 for a model that is not installed locally.
+                        if local and error.status_code == 404:
+                            raise AppError(
+                                "local_model_missing",
+                                "The selected model is not installed in the local Ollama server.",
+                            ) from None
+                        raise
+                    if local:
+                        data = ollama.as_chat_completion(data)
                     payload, truncated = self._parse(data)
                     used = payload.usage
                     if used.input_tokens is not None and used.output_tokens is not None:
