@@ -261,7 +261,6 @@ def test_evaluator_roles_stay_on_groq_with_their_own_credential(provider, tmp_pa
 
 
 def test_full_pack_local_target_matches_hosted_run_history_and_exports(tmp_path):
-    """Same pack, same scripted replies: a local target must produce the same saved results."""
     from pathlib import Path
 
     from scripts.pipeline_fixture import (

@@ -1,10 +1,3 @@
-"""Opt-in checks against a user-run local Ollama server and an already installed model.
-
-Set ASCLEPIUS_LIVE_OLLAMA=1 and ASCLEPIUS_OLLAMA_MODEL=<installed model>. Optional:
-ASCLEPIUS_OLLAMA_URL (default http://127.0.0.1:11434). A skip is not a pass. These tests
-never pull models or start the server.
-"""
-
 import asyncio
 import json
 import os

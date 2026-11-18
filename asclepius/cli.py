@@ -135,7 +135,6 @@ async def dispatch(options, json_output: bool) -> None:
                 **({"config": options.config} if options.action == "start" else {}),
             )
             if options.action == "start" and running_under_wsl():
-                # Stderr keeps the JSON envelope on stdout unchanged.
                 print(WSL_DAEMON_WARNING, file=sys.stderr, flush=True)
     elif command == "targets":
         if options.action == "add":

@@ -1,5 +1,3 @@
-"""Development entry point for the explicit opt-in Groq workflow."""
-
 import argparse
 import json
 import sys
