@@ -64,10 +64,15 @@ def data_directory(override: Path | None = None) -> Path:
     if override is not None:
         return local_directory(override)
     if os.name == "nt":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        base = _absolute_env("LOCALAPPDATA", Path.home() / "AppData" / "Local")
         return local_directory(base / "Asclepius")
-    base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+    base = _absolute_env("XDG_DATA_HOME", Path.home() / ".local" / "share")
     return local_directory(base / "asclepius")
+
+
+def _absolute_env(name: str, default: Path) -> Path:
+    value = os.environ.get(name, "")
+    return Path(value) if value and Path(value).is_absolute() else default
 
 
 class DaemonConfig(Contract):

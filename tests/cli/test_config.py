@@ -1,8 +1,9 @@
+import os
 from pathlib import Path
 
 import pytest
 
-from asclepius.config import load_evaluator, load_target
+from asclepius.config import data_directory, load_evaluator, load_target
 from asclepius.domain import AppError
 
 TARGET = """schema_version = 1
@@ -156,3 +157,15 @@ def test_daemon_policy_resolves_relative_ca_and_pins_limits(tmp_path):
     policy = load_daemon(path)
     assert policy.ca_bundle == str((tmp_path / "ca.pem").resolve())
     assert policy.limits.active_runs == 2 and policy.limits.total_calls == 50
+
+
+@pytest.mark.parametrize("value", ["", "relative/dir"])
+def test_empty_or_relative_base_directory_uses_the_default(tmp_path, monkeypatch, value):
+    name = "LOCALAPPDATA" if os.name == "nt" else "XDG_DATA_HOME"
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv(name, raising=False)
+    default = data_directory()
+    monkeypatch.setenv(name, value)
+    assert data_directory() == default
+    assert default.is_relative_to(tmp_path) and default != (tmp_path / "asclepius").resolve()

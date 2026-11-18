@@ -69,6 +69,7 @@ def start_daemon(
             child = subprocess.Popen(
                 [
                     sys.executable,
+                    "-P",
                     "-m",
                     "asclepius.daemon",
                     "--data-dir",

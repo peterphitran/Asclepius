@@ -49,9 +49,10 @@ def test_stale_ready_pid_cannot_impersonate_child_startup(tmp_path):
         stop_daemon(tmp_path, timeout=5)
 
 
-def test_daemon_fails_legacy_plan_before_network(tmp_path):
+def test_daemon_fails_run_without_credentials_before_network(tmp_path, monkeypatch):
     from asclepius.domain import ProfileConfig, TargetConfig
 
+    monkeypatch.delenv("KEY", raising=False)
     repo = Repository(tmp_path)
     run(repo.initialize())
     profile = ProfileConfig(target=TargetConfig(name="test", model="test", secret_ref="env:KEY"))
@@ -67,7 +68,7 @@ def test_daemon_fails_legacy_plan_before_network(tmp_path):
                 break
             time.sleep(0.05)
         assert view.state == RunState.FAILED
-        assert view.reason == "plan_not_executable"
+        assert view.reason == "secret_missing"
         assert view.observations == ()
     finally:
         stop_daemon(tmp_path, timeout=5)
@@ -279,8 +280,6 @@ def test_wsl_detection_reads_the_kernel_release(monkeypatch, release, expected):
 
 @pytest.mark.parametrize("wsl", [True, False])
 def test_daemon_start_warns_on_wsl_without_changing_json(tmp_path, monkeypatch, capsys, wsl):
-    # Live check 2026-11-14: WSL stopped its Linux side about 15 s after the last session
-    # ended and killed the detached daemon mid-run.
     import asclepius.cli as cli
     from asclepius.process import WSL_DAEMON_WARNING
 
@@ -290,3 +289,16 @@ def test_daemon_start_warns_on_wsl_without_changing_json(tmp_path, monkeypatch, 
     out, err = capsys.readouterr()
     assert json.loads(out) == {"schema_version": 1, "ok": True, "data": {"state": "ready"}}
     assert (WSL_DAEMON_WARNING in err) is wsl
+
+
+def test_daemon_does_not_import_modules_planted_in_the_data_directory(tmp_path):
+    repo = Repository(tmp_path)
+    run(repo.initialize())
+    marker = tmp_path / "planted-ran"
+    for name in ("portalocker", "pydantic", "httpx"):
+        (tmp_path / f"{name}.py").write_text(
+            f"open({str(marker)!r}, 'w').close()\nraise ImportError('planted')\n"
+        )
+    start_daemon(tmp_path, timeout=15)
+    stop_daemon(tmp_path, timeout=5)
+    assert not marker.exists()

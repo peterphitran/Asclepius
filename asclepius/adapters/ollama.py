@@ -1,22 +1,11 @@
-"""Local Ollama target over its native, non-streaming /api/chat endpoint.
-
-Only the wire format lives here. Budgets, limits, redaction and saved observations come from
-the shared connection, so a local target behaves like a hosted one everywhere else. This
-module never pulls models or starts a server; a missing model is reported, not fixed.
-"""
-
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import ValidationError
 
-from asclepius.adapters.chat import ChatAdapter, PreparedCall
+from asclepius.adapters.chat import ChatAdapter, PreparedCall, _WireModel
 from asclepius.domain import AppError, NonNegativeInt, Observation, OperationRequest
 
 ADAPTER = "ollama-chat"
-
-
-class _WireModel(BaseModel):
-    model_config = ConfigDict(extra="ignore", strict=True, hide_input_in_errors=True)
 
 
 class _Message(_WireModel):
@@ -51,7 +40,6 @@ def request_body(config, messages: list[dict]) -> dict:
 
 
 def as_chat_completion(data: dict) -> dict:
-    """Restate a native reply in the chat-completion shape the shared parser checks."""
     try:
         reply = _Reply.model_validate(data)
     except ValidationError:
@@ -80,8 +68,6 @@ def as_chat_completion(data: dict) -> dict:
 
 
 class OllamaAdapter(ChatAdapter):
-    """Target adapter for a user-run local Ollama server and an already installed model."""
-
     def _require_local(self) -> None:
         if self.connection.snapshot.profile.target.adapter != ADAPTER:
             raise AppError("unsupported_adapter", "This adapter requires an Ollama target.", 2)

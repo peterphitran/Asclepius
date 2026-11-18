@@ -19,7 +19,7 @@ from asclepius.domain import (
     TokenUsage,
 )
 from asclepius.limits import BudgetManager
-from asclepius.transport import JsonTransport, ProviderHttpError
+from asclepius.transport import JsonTransport, ProviderHttpError, valid_secret
 
 ROLES = frozenset({"selector", "generator", "judge", "reporter"})
 
@@ -32,6 +32,14 @@ class PreparedCall(Contract):
         if self.request.provider_body_json is None:
             raise AppError("unprepared_call", "Provider call has not been prepared.", 2)
         return self.request.provider_body_json
+
+
+BYTES_PER_INPUT_TOKEN = 4
+
+
+def token_upper_bound(body_json: str, max_completion_tokens: int) -> int:
+    input_tokens = -(-len(body_json.encode("utf-8")) // BYTES_PER_INPUT_TOKEN)
+    return input_tokens + max_completion_tokens
 
 
 class _WireModel(BaseModel):
@@ -65,7 +73,6 @@ class _Reply(_WireModel):
 
 
 def _is_local(actor: str, config) -> bool:
-    """A local Ollama target: no credential, native wire format, same budgets and limits."""
     return actor == "target" and config.adapter == "ollama-chat"
 
 
@@ -205,11 +212,15 @@ class GroqConnection:
             config = self._config(actor)
             if _is_local(actor, config):
                 continue
-            secret = self._secrets.get(config.secret_ref)
-            if not secret:
-                raise AppError("secret_missing", "Selected provider credential is unavailable.", 2)
-            if any(ord(char) < 33 or ord(char) > 126 for char in secret):
-                raise AppError("secret_invalid", "Selected provider credential is invalid.", 2)
+            self._secret(config)
+
+    def _secret(self, config) -> str:
+        secret = self._secrets.get(config.secret_ref)
+        if not secret:
+            raise AppError("secret_missing", "Selected provider credential is unavailable.", 2)
+        if not valid_secret(secret):
+            raise AppError("secret_invalid", "Selected provider credential is invalid.", 2)
+        return secret
 
     async def execute(self, call: PreparedCall) -> Observation:
         request = call.request
@@ -222,15 +233,7 @@ class GroqConnection:
         reservation = None
         observation = None
         try:
-            secret = None
-            if not local:
-                secret = self._secrets.get(config.secret_ref)
-                if not secret:
-                    raise AppError(
-                        "secret_missing", "Selected provider credential is unavailable.", 2
-                    )
-                if any(ord(char) < 33 or ord(char) > 126 for char in secret):
-                    raise AppError("secret_invalid", "Selected provider credential is invalid.", 2)
+            secret = None if local else self._secret(config)
             body = json.loads(call.body_json)
             kind = "target" if request.actor == "target" else "evaluator"
             role = None if kind == "target" else request.actor
@@ -242,9 +245,7 @@ class GroqConnection:
             reservation = await self.budgets.reserve(
                 str(request.run_id), kind, config.max_completion_tokens
             )
-            # Rough upper bound for the tokens-per-minute budget: about 4 bytes per input
-            # token plus the full output cap. Measured usage replaces it after the reply.
-            estimate = -(-len(call.body_json.encode("utf-8")) // 4) + config.max_completion_tokens
+            estimate = token_upper_bound(call.body_json, config.max_completion_tokens)
             async with self.budgets.slot(self.snapshot, kind, role=role, tokens=estimate) as lease:
                 phase = "authorizing"
                 await self.budgets.dispatch(reservation)

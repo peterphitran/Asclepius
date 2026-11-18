@@ -27,8 +27,6 @@ def resource_identity(endpoint: str) -> tuple[str, str]:
 
 
 class TokenLease:
-    """A slot's entry in the tokens-per-minute windows, charged with an estimate until measured."""
-
     def __init__(self, entries: list[list[float]]) -> None:
         self._entries = entries
 
@@ -82,14 +80,10 @@ class BudgetManager:
         finally:
             leases.remove(limit)
 
-    @asynccontextmanager
-    async def run_slot(self, snapshot: RunSnapshot):
-        async with self._gate(
-            "active-runs",
-            min(self.limits.active_runs, snapshot.profile.limits.active_runs),
-            snapshot,
-        ):
-            yield
+    def _fits_token_window(self, key: str, tokens: int, cap: int) -> bool:
+        window = self._tokens[key]
+        idle_window_admits_any_size = not window
+        return idle_window_admits_any_size or sum(e[1] for e in window) + tokens <= cap
 
     @asynccontextmanager
     async def slot(
@@ -145,11 +139,8 @@ class BudgetManager:
                 for key in token_keys:
                     while self._tokens[key] and self._tokens[key][0][0] <= now - 60:
                         self._tokens[key].popleft()
-                # An oversized request runs alone rather than waiting forever.
                 if all(len(self._rate[key]) < cap for key in rate_keys) and all(
-                    not self._tokens[key]
-                    or sum(entry[1] for entry in self._tokens[key]) + tokens <= token_cap
-                    for key in token_keys
+                    self._fits_token_window(key, tokens, token_cap) for key in token_keys
                 ):
                     for key in rate_keys:
                         self._rate[key].append(now)

@@ -12,6 +12,10 @@ from asclepius.domain import AppError, Endpoint, RetryAfter
 _provider_logging = ContextVar("asclepius_provider_logging", default=False)
 
 
+def valid_secret(secret: str) -> bool:
+    return bool(secret) and all(33 <= ord(char) <= 126 for char in secret)
+
+
 class _ProviderLogFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         return not _provider_logging.get()
@@ -53,15 +57,12 @@ class JsonTransport:
         deadline_seconds: float,
         response_bytes: int,
     ) -> dict:
-        """POST JSON. `secret=None` sends no Authorization header (local targets only)."""
         try:
             TypeAdapter(Endpoint).validate_python(endpoint)
             httpx.URL(endpoint)
         except (ValidationError, httpx.InvalidURL):
             raise AppError("transport_config", "Invalid provider endpoint.", 2) from None
-        if secret is not None and (
-            not secret or any(ord(char) < 33 or ord(char) > 126 for char in secret)
-        ):
+        if secret is not None and not valid_secret(secret):
             raise AppError("secret_invalid", "Provider secret is missing or invalid.", 2)
         headers = {"Accept-Encoding": "identity"}
         if secret is not None:
