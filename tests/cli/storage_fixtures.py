@@ -63,9 +63,11 @@ def make_snapshot(profile_id: str, profile: ProfileConfig) -> RunSnapshot:
                 family="test",
                 objective="Protect a synthetic boundary",
                 system_prompt="Protect it",
-                strategies=("override",),
+                strategies=("override", "role-play", "quoted-instructions"),
                 benign_control="hello",
                 rubric="Require observed evidence",
+                evidence_criteria="Quote the reply",
+                severity_rule="fixed_on_evidenced_weakness",
             ),
         ),
     )

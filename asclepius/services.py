@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from asclepius.checks import require_executable
 from asclepius.domain import (
     AppError,
     CheckDefinition,
@@ -15,6 +16,7 @@ from asclepius.domain import (
     SubmissionPlan,
 )
 from asclepius.storage import Repository
+from asclepius.transport import valid_secret
 
 
 def validate_credentials(profile: ProfileConfig, evaluator: EvaluatorConfig) -> None:
@@ -28,11 +30,18 @@ def validate_credentials(profile: ProfileConfig, evaluator: EvaluatorConfig) -> 
             evaluator.roles.reporter,
         )
     )
-    if any(reference and not os.environ.get(reference[4:], "").strip() for reference in references):
+    values = [os.environ.get(reference[4:], "") for reference in references if reference]
+    if any(not value.strip() for value in values):
         raise AppError(
             "credentials_missing",
             "A required credential is missing. Set the configured environment references "
             "before submitting and starting the daemon.",
+            2,
+        )
+    if not all(valid_secret(value) for value in values):
+        raise AppError(
+            "secret_invalid",
+            "A configured credential has spaces, line breaks or non-ASCII characters.",
             2,
         )
 
@@ -43,6 +52,8 @@ def validate_checks(profile: ProfileConfig, checks: tuple[CheckDefinition, ...])
         raise AppError("unsupported_check", "The target does not support every requested check.", 2)
     if len({check.id for check in checks}) != len(checks):
         raise AppError("invalid_plan", "Requested check identities must be unique.", 2)
+    for check in checks:
+        require_executable(check)
 
 
 def submission_plan(

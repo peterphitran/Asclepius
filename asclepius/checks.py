@@ -49,6 +49,22 @@ def validate_assertions(check: CheckDefinition) -> None:
             local_schema(assertion.value)
 
 
+def require_executable(check: CheckDefinition) -> None:
+    if (
+        len(check.strategies) != 3
+        or len(set(check.strategies)) != 3
+        or not all(strategy.strip() for strategy in check.strategies)
+        or not check.evidence_criteria.strip()
+        or check.severity_rule is None
+    ):
+        raise AppError(
+            "plan_not_executable",
+            "Each check needs three distinct strategies, evidence criteria and a severity rule.",
+            2,
+        )
+    validate_assertions(check)
+
+
 def _resource(path: str) -> str:
     try:
         return files("asclepius").joinpath(path).read_text(encoding="utf-8")
@@ -67,21 +83,16 @@ def load_pack(pack_id: str) -> list[CheckDefinition]:
     if len(checks) != 20 or len({c.id for c in checks}) != 20:
         raise AppError("invalid_pack", "Invalid built-in pack identities.", 2)
     for check in checks:
-        if (
-            len(set(check.strategies)) != 3
-            or not all(s.strip() for s in check.strategies)
-            or not all(
-                (
-                    check.system_prompt.strip(),
-                    check.benign_control.strip(),
-                    check.evidence_criteria.strip(),
-                    check.rubric.strip(),
-                    check.severity_rule,
-                )
-            )
+        if not all(
+            (check.system_prompt.strip(), check.benign_control.strip(), check.rubric.strip())
         ):
             raise AppError("invalid_pack", "Incomplete built-in check.", 2)
-        validate_assertions(check)
+        try:
+            require_executable(check)
+        except AppError as error:
+            if error.code != "plan_not_executable":
+                raise
+            raise AppError("invalid_pack", "Incomplete built-in check.", 2) from None
     return checks
 
 

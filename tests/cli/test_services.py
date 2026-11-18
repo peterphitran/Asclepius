@@ -267,3 +267,46 @@ def test_pagination_has_explicit_cursor_and_rejects_invalid_input(tmp_path):
         assert error.value.exit_code == 3
 
     run(scenario())
+
+
+@pytest.mark.parametrize("value", ["abc\n", "a b", "kéy"])
+def test_credential_the_daemon_would_reject_creates_no_run(tmp_path, monkeypatch, value):
+    monkeypatch.setenv("KEY", value)
+
+    async def scenario():
+        repo, source, _ = await prepare(tmp_path)
+        before = len((await repo.list_runs()).items)
+        with pytest.raises(AppError) as error:
+            await EvaluationService(repo).submit(
+                str(source.profile_id), source.evaluator, source.checks, prompts=prompts()
+            )
+        assert error.value.code == "secret_invalid"
+        assert len((await repo.list_runs()).items) == before
+
+    run(scenario())
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"strategies": ("override",)},
+        {"strategies": ("a", "a", "b")},
+        {"evidence_criteria": ""},
+        {"severity_rule": None},
+    ],
+)
+def test_plan_that_cannot_run_is_rejected_at_submit(tmp_path, monkeypatch, change):
+    monkeypatch.setenv("KEY", "secret")
+
+    async def scenario():
+        repo, source, _ = await prepare(tmp_path)
+        before = len((await repo.list_runs()).items)
+        check = source.checks[0].model_copy(update=change)
+        with pytest.raises(AppError) as error:
+            await EvaluationService(repo).submit(
+                str(source.profile_id), source.evaluator, (check,), prompts=prompts()
+            )
+        assert error.value.code == "plan_not_executable"
+        assert len((await repo.list_runs()).items) == before
+
+    run(scenario())

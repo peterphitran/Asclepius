@@ -3,7 +3,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import time
 import tomllib
 from pathlib import Path
 
@@ -64,30 +63,30 @@ def main() -> None:
             assert started["owned"] and started["responsive"]
             assert started["execution_available"] is True
             assert command("daemon", "start")["instance_id"] == started["instance_id"]
-            accepted = command(
-                "run",
-                target["name"],
-                "--plan",
-                str(examples / "submission-plan.json"),
-                "--evaluator",
-                str(evaluator_path),
+            plan = json.loads((examples / "submission-plan.json").read_text(encoding="utf-8"))
+            del plan["checks"][0]["severity_rule"]
+            broken = Path(directory) / "broken-plan.json"
+            broken.write_text(json.dumps(plan), encoding="utf-8")
+            rejected = subprocess.run(
+                [
+                    *[sys.executable, "-m", "asclepius", "--data-dir", directory, "--json"],
+                    *["run", target["name"], "--plan", str(broken)],
+                    *["--evaluator", str(evaluator_path)],
+                ],
+                capture_output=True,
+                text=True,
+                timeout=25,
+                env=environment,
             )
-            assert accepted["state"] == "queued"
-            deadline = time.monotonic() + 15
-            while time.monotonic() < deadline:
-                view = command("runs", "show", accepted["id"])
-                if view["state"] not in {"queued", "running"}:
-                    break
-                time.sleep(0.1)
-            assert view["state"] == "failed" and view["reason"] == "plan_not_executable"
-            assert view["observations"] == []
+            assert rejected.returncode == 2, rejected.stdout + rejected.stderr
+            assert json.loads(rejected.stdout)["error"]["code"] == "plan_not_executable"
+            assert command("runs", "list")["items"] == []
         finally:
             assert command("daemon", "stop")["owned"] is False
             wait_for_windows_exit(started["pid"])
-        assert command("runs", "show", accepted["id"])["state"] == "failed"
     print(
-        "Installed daemon CLI probe passed: ownership, duplicate start, queued submission, "
-        "legacy-plan preflight failure, stop, and stopped reads. No provider requests."
+        "Installed daemon CLI probe passed: ownership, duplicate start, submit-time rejection "
+        "of a plan that cannot run, stop, and stopped reads. No provider requests."
     )
 
 

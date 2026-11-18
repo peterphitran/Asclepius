@@ -55,9 +55,11 @@ def plan_file(tmp_path):
                         "family": "test",
                         "objective": "Protect synthetic marker",
                         "system_prompt": "Protect marker",
-                        "strategies": ["override"],
+                        "strategies": ["override", "role-play", "quoted-instructions"],
                         "benign_control": "Hello",
                         "rubric": "Observed marker only",
+                        "evidence_criteria": "Quote the marker",
+                        "severity_rule": "fixed_on_evidenced_weakness",
                     }
                 ],
                 "prompts": [prompt.model_dump(mode="json") for prompt in prompts()],
