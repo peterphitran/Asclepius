@@ -79,7 +79,7 @@ watch interruption. Regression tests cover removed-identity lookup, concurrent r
 incomplete retry plans, consistent cancellation reasons, deeply nested JSON errors, and
 initialization that preserves an existing file selected as the data directory.
 
-The rebuilt wheels pass `backend/scripts/verify_cli_management.py` outside the source tree
+The rebuilt wheels pass `scripts/verify_cli_management.py` outside the source tree
 on both platforms. The script verifies installed imports and real profile commands. It
 does not start a daemon or send provider requests. Controlled readiness and injected
 KeyboardInterrupt tests do not establish actual daemon ownership or terminal-close survival.
@@ -93,7 +93,7 @@ migration, lock exclusion, cancellation-safe worker drain, and separately exerci
 Loopback HTTP handlers record destination concurrency; fixtures do not substitute for model
 evaluation. Shared origin/reference rate gates reject alias bypasses.
 
-The Task 4 rebuilt wheels passed the then-current `backend/scripts/verify_daemon.py`
+The Task 4 rebuilt wheels passed the then-current `scripts/verify_daemon.py`
 outside the source tree. That version drove the real CLI with synthetic credentials,
 submitted to a real ready control daemon, verified queued state, stopped it, and read/cancelled
 while stopped. Task 7 updates the executable driver for current execution behavior.
@@ -119,7 +119,7 @@ retain validated retry timing without automatic retries. Empty length-limited re
 retain metadata and produce a typed incomplete evaluator result.
 
 Fresh environments installed each platform's hashed lock and rebuilt wheel. The
-installed `backend/scripts/verify_groq.py` proof runs outside the checkout and makes two
+installed `scripts/verify_groq.py` proof runs outside the checkout and makes two
 HTTPS requests, validates an evaluator reply, and persists both observations through
 real SQLite budgets. Its temporary store and fixture server are removed afterward.
 
@@ -138,7 +138,7 @@ review findings and regressions, final reviewer responses, source hashes, and wh
 The final suites passed 305 WSL tests and 304 native Windows tests with one existing
 WSL-only skip. Ruff lint and formatting checks passed.
 
-`backend/scripts/verify_agents.py` runs against each final installed wheel outside the
+`scripts/verify_agents.py` runs against each final installed wheel outside the
 checkout. It reads bundled resources and drives the public CLI. It uses a controlled
 ready record and deterministic callbacks through real gateway preparation. It does not
 start a daemon, send provider requests, or persist role observations through a coordinator.
@@ -160,7 +160,7 @@ WSL-only skip. Those runs preceded a fixture-only SQLite cleanup fix; two focuse
 regressions per platform and the final installed-wheel proofs cover that fix. Runtime
 package code was unchanged. Ruff passed. The legacy Starlette HTTPX warning remains.
 
-The installed driver is `backend/scripts/verify_pipeline.py`. It checks prepared intents
+The installed driver is `scripts/verify_pipeline.py`. It checks prepared intents
 and generated inputs at provider receipt, two concurrent aliases under shared bounds,
 and HTTP/invalid-proposal failures. It asserts an installed import, stops owned daemons,
 and removes temporary stores. Exact final platform results, hashes, reviewer responses,
@@ -187,7 +187,7 @@ drain; unrelated admission/storage errors still propagate. Review strengthened r
 and uncertain-intent preservation checks; raw RED/GREEN results and full review reports
 are retained in the record.
 
-`backend/scripts/verify_recovery.py` passed against both final installed wheels outside
+`scripts/verify_recovery.py` passed against both final installed wheels outside
 the checkout. It shares the real scenario functions, asserts intended installed imports,
 and records run identities, unknown operations, reply counts, watcher OS-event results,
 and cleanup. Windows uses a dedicated watcher console guarded by exact process membership;
@@ -212,7 +212,7 @@ RED, focused legacy/publication regressions, actual review reports and correctio
 reproduced and fixed carriage-return Markdown injection and isolated child CLI imports;
 CR/CRLF, terminal/bidi controls and shadow-package regressions cover those changes.
 
-Both installed `backend/scripts/verify_results.py` proofs run outside the checkout and use
+Both installed `scripts/verify_results.py` proofs run outside the checkout and use
 public CLI, real daemon, verified fixture HTTPS and SQLite. Full known-data evidence has
 60 attacks (1 weakness, 58 passes, 1 inconclusive), 20 answered controls, 80 target cases,
 and 182 observations. Smaller comparison/empty/partial scenarios are recorded separately.

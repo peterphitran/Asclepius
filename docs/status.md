@@ -26,16 +26,16 @@ API is preserved on the local branch `wip/legacy-sweep-lifecycle`.
 
 | Area | Location | Current behavior |
 | --- | --- | --- |
-| CLI | `backend/asclepius/cli.py` | Help, configuration, initialization, profiles, run/history/finding reads, watch, cancellation, and retry commands. |
-| Services | `backend/asclepius/services.py` | Complete supplied-plan validation, credential presence checks, pinned snapshots, cancellation, and linked retries. Submission makes no provider calls or implicit daemon launch. |
-| Local storage | `backend/asclepius/storage.py` | SQLite snapshots, paginated reads, profile tombstones, claims, fenced writes, atomic stage/evidence commits, and orphan interruption. Coordinator uses these transactions for execution. |
-| Daemon control | `backend/asclepius/process.py`, `daemon.py` | Manual detached start, generation-bound readiness, heartbeat, duplicate exclusion, drain/stop. Claims within shared limits, heartbeats independently, and drains active work. |
-| Bounds | `backend/asclepius/limits.py` | Shared request gates/rates and durable call/completion reservations, connected to provider components. Cancellation before dispatch releases allowance; uncertain dispatch retains it. |
-| Provider components | `backend/asclepius/transport.py`, `adapters/chat.py`, `adapters/ollama.py`, `models.py` | Bounded HTTPS (plain HTTP only on loopback for a local Ollama target), independent credentials, redacted immutable requests, strict evaluator schemas, typed errors and validated retry timing. No automatic retries; coordinator persists their evidence. |
-| Saved results and exports | `backend/asclepius/results.py`, `exports.py` | Coherent comparison summaries, separate attack/control/legacy outcomes, inert JSON/Markdown/HTML and atomic local publication. |
-| Checks and agents | `backend/asclepius/checks.py`, `agents.py`, `packs/`, `prompts/` | Twenty pinned checks, three generated attacks and one code-owned control per check. Four role contracts require an injected prepared-request dispatch. Coordinator supplies durable dispatch. |
-| Local migrations | `backend/asclepius/maintenance.py`, `migrations/` | New schema v4 and explicit stopped v1/v2/v3 upgrade, OS/maintenance locking, rollback, and local-only path policy. |
-| Tests | `backend/tests/cli/` | Real HTTP/HTTPS provider fixtures, SQLite persistence and budgets, process checks, and a check that the CLI runs with every legacy web dependency blocked. See the [Task 7 execution results](verification/evidence/cli-pipeline.json) and [Task 8 recovery results](verification/evidence/cli-recovery.json). Native Windows skips the WSL-only mount test. |
+| CLI | `asclepius/cli.py` | Help, configuration, initialization, profiles, run/history/finding reads, watch, cancellation, and retry commands. |
+| Services | `asclepius/services.py` | Complete supplied-plan validation, credential presence checks, pinned snapshots, cancellation, and linked retries. Submission makes no provider calls or implicit daemon launch. |
+| Local storage | `asclepius/storage.py` | SQLite snapshots, paginated reads, profile tombstones, claims, fenced writes, atomic stage/evidence commits, and orphan interruption. Coordinator uses these transactions for execution. |
+| Daemon control | `asclepius/process.py`, `daemon.py` | Manual detached start, generation-bound readiness, heartbeat, duplicate exclusion, drain/stop. Claims within shared limits, heartbeats independently, and drains active work. |
+| Bounds | `asclepius/limits.py` | Shared request gates/rates and durable call/completion reservations, connected to provider components. Cancellation before dispatch releases allowance; uncertain dispatch retains it. |
+| Provider components | `asclepius/transport.py`, `adapters/chat.py`, `adapters/ollama.py`, `models.py` | Bounded HTTPS (plain HTTP only on loopback for a local Ollama target), independent credentials, redacted immutable requests, strict evaluator schemas, typed errors and validated retry timing. No automatic retries; coordinator persists their evidence. |
+| Saved results and exports | `asclepius/results.py`, `exports.py` | Coherent comparison summaries, separate attack/control/legacy outcomes, inert JSON/Markdown/HTML and atomic local publication. |
+| Checks and agents | `asclepius/checks.py`, `agents.py`, `packs/`, `prompts/` | Twenty pinned checks, three generated attacks and one code-owned control per check. Four role contracts require an injected prepared-request dispatch. Coordinator supplies durable dispatch. |
+| Local migrations | `asclepius/maintenance.py`, `migrations/` | New schema v4 and explicit stopped v1/v2/v3 upgrade, OS/maintenance locking, rollback, and local-only path policy. |
+| Tests | `tests/cli/` | Real HTTP/HTTPS provider fixtures, SQLite persistence and budgets, process checks, and a check that the CLI runs with every legacy web dependency blocked. See the [Task 7 execution results](verification/evidence/cli-pipeline.json) and [Task 8 recovery results](verification/evidence/cli-recovery.json). Native Windows skips the WSL-only mount test. |
 
 ## Missing product capabilities
 

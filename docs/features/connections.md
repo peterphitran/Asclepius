@@ -20,7 +20,7 @@ See the [execution evidence](../verification/evidence/cli-pipeline.json) and the
 
 ## Local Ollama targets
 
-Set `adapter = "ollama-chat"` in the target file (see `backend/examples/ollama-target.toml`).
+Set `adapter = "ollama-chat"` in the target file (see `examples/ollama-target.toml`).
 The target is your own Ollama server; the evaluator stays on Groq with its own credential.
 
 - No credential: an Ollama target refuses `secret_ref`, and no `Authorization` header is sent.
@@ -43,14 +43,14 @@ Configure the profile before running checks. A model, chatbot, or RAG app may ex
 an HTTP chat endpoint; application type alone does not determine the adapter.
 The [backend design](../specs/backend-design.md) proposes the first adapter contract.
 Generic request templates and reply selectors are not implemented. Current provider
-boundaries live in `backend/asclepius/adapters/chat.py` and `models.py`.
+boundaries live in `asclepius/adapters/chat.py` and `models.py`.
 
 ## Driving it with the terminal
 
 Use a local fixture with a request log. Verify destination, request structure, extracted
 reply, limits, and error classification through an actual run. Include valid, malformed,
 oversized, and delayed replies. Confirm credential values are absent from shared output.
-The current installed-wheel proof runs `backend/scripts/verify_groq.py` against loopback
+The current installed-wheel proof runs `scripts/verify_groq.py` against loopback
 HTTPS and real local SQLite budgets. It does not run a CLI evaluation or contact Groq.
 
 ## Gotchas

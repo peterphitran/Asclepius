@@ -7,7 +7,7 @@ works without a daemon, API server, or database service.
 
 ## CLI foundation
 
-From `backend/` in a separate active Python environment, choose the matching hashed lock:
+From the repo root in a separate active Python environment, choose the matching hashed lock:
 
 ```text
 python -m pip install --require-hashes -r requirements-cli-wsl.lock
@@ -45,7 +45,7 @@ After building and installing a wheel in the matching test environment, run from
 the checkout with absolute paths:
 
 ```text
-python <checkout>/backend/scripts/verify_groq.py <checkout>/backend/tests/cli/fixtures
+python <checkout>/scripts/verify_groq.py <checkout>/tests/cli/fixtures
 ```
 
 The script asserts a `site-packages` import, runs two real loopback HTTPS requests using
@@ -58,7 +58,7 @@ response, queued CLI execution, or four-agent pipeline is involved.
 
 ## Guarded hosted workflow
 
-From `backend`, use the development driver with a fresh artifact directory and the Python
+From the repo root, use the development driver with a fresh artifact directory and the Python
 interpreter that has the CLI installed:
 
 ```text
@@ -111,7 +111,7 @@ Build and install the final wheel into a separate environment, then run outside 
 checkout using absolute paths:
 
 ```text
-python <checkout>/backend/scripts/verify_pipeline.py --certificates <checkout>/backend/tests/cli/fixtures
+python <checkout>/scripts/verify_pipeline.py --certificates <checkout>/tests/cli/fixtures
 ```
 
 The driver asserts a `site-packages` import. It starts real detached daemons and uses
@@ -125,7 +125,7 @@ not contact hosted models or establish semantic judgment accuracy.
 After installing the final wheel, run outside the checkout:
 
 ```text
-python <checkout>/backend/scripts/verify_recovery.py --certificates <checkout>/backend/tests/cli/fixtures
+python <checkout>/scripts/verify_recovery.py --certificates <checkout>/tests/cli/fixtures
 ```
 
 Keep `recovery_fixture.py` and `pipeline_fixture.py` beside the driver. It requires the
@@ -175,7 +175,7 @@ Historical planned totals and absent usage counters remain unknown rather than z
 After installing the final wheel, run outside the checkout with a new artifact directory:
 
 ```text
-python <checkout>/backend/scripts/verify_results.py --certificates <checkout>/backend/tests/cli/fixtures --artifacts <owned-artifact-directory>
+python <checkout>/scripts/verify_results.py --certificates <checkout>/tests/cli/fixtures --artifacts <owned-artifact-directory>
 ```
 
 The driver asserts installed imports, creates isolated stores, and drives public CLI,
@@ -187,7 +187,7 @@ retaining reports for browser inspection. Fixture replies and credentials are sy
 
 ## Manage local profiles and inspect history
 
-From `backend/`, choose a separate local data directory for each operating system:
+From the repo root, choose a separate local data directory for each operating system:
 
 ```text
 asclepius --data-dir <local-directory> init
@@ -227,7 +227,7 @@ reports execution capability for the actual owning generation. Starting the daem
 explicit; submission does not launch it.
 
 The submission interface accepts complete checks and four role prompts from a bounded,
-versioned JSON file. The [custom example](../backend/examples/submission-plan.json) is synthetic
+versioned JSON file. The [custom example](../examples/submission-plan.json) is synthetic
 input for this interface, not a verified attack pack or proof of model evaluation.
 
 ```text
@@ -344,7 +344,7 @@ and uncertain authorization outcomes retain their reservations.
 
 Use Python 3.12 or newer and an environment compatible with the operating system.
 
-For a fresh checkout without an existing environment, run from `backend/`:
+For a fresh checkout without an existing environment, run from the repo root:
 
 ```text
 python -m venv .venv
@@ -355,7 +355,7 @@ Activate with `source .venv/bin/activate` on Linux/WSL, or
 in the original checkout is Linux-based: use it through WSL, not as a Windows executable.
 Do not replace it merely to run from another shell.
 
-From `backend/`, with the chosen environment active:
+From the repo root, with the chosen environment active:
 
 ```text
 python -m pip install -e ".[dev]"
