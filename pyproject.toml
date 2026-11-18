@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "asclepius-backend"
+name = "asclepius"
 version = "0.1.0"
 description = "Asclepius CLI security evaluator for LLM systems."
 requires-python = ">=3.12"
