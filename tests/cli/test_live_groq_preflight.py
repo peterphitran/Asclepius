@@ -9,7 +9,7 @@ import pytest
 from asclepius.domain import EvaluatorConfig, ProfileConfig
 from scripts.live_groq_fixture import WorkflowFailure, preflight, probes, run_workflow, save
 from scripts.pipeline_fixture import KEY, provider
-from tests.cli.test_live_groq_driver import configurations
+from tests.cli.live_groq_support import configurations
 
 CERTIFICATES = Path(__file__).parent / "fixtures"
 GPT_OSS = ("openai/gpt-oss-20b", "openai/gpt-oss-120b")

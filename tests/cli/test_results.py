@@ -8,26 +8,15 @@ from pydantic import ValidationError
 
 from asclepius.domain import (
     AppError,
-    ChatInput,
-    ChatOutput,
     EvidenceRef,
     Finding,
     Judgment,
-    Message,
-    Observation,
-    ProfileConfig,
-    RunView,
-    StageAttempt,
-    TargetConfig,
-    TokenUsage,
-    Variant,
 )
 from asclepius.results import assess_runs, finding_detail, summarize_run
 from asclepius.storage import Repository
-from tests.cli.storage_fixtures import make_snapshot, prepare, run
-from tests.cli.test_cli_help import run_cli
-
-HOSTILE = "<script>alert(1)</script>\n\n[click](https://evil.invalid)\n```\n# injected\n\x1b]8;;https://evil.invalid\x07x\x1b]8;;\x07\u202e"
+from tests.cli.cli_support import run_cli
+from tests.cli.storage_fixtures import OWNER, observed_variant, prepare, run
+from tests.cli.view_support import alternate, evidence_view
 
 
 def test_report_public_cli_writes_zero_generated_summary(tmp_path):
@@ -51,97 +40,6 @@ def test_report_public_cli_writes_zero_generated_summary(tmp_path):
     assert document["summaries"][0]["attacks"]["generated"] == 0
     assert document["summaries"][0]["planned_cases"] is None
     assert document["summaries"][0]["families"][0]["requested_checks"] == 1
-
-
-def evidence_view():
-    profile = ProfileConfig(
-        target=TargetConfig(name="fixture", model="model", secret_ref="env:KEY")
-    )
-    snapshot = make_snapshot(str(uuid4()), profile)
-    extra = snapshot.checks[0].model_copy(update={"id": "unrun", "family": "unrun"})
-    snapshot = snapshot.model_copy(update={"checks": (*snapshot.checks, extra)})
-    variants = tuple(
-        Variant(
-            check_id="test.check",
-            check_version="1",
-            kind="control" if index >= 6 else "attack",
-            payload=ChatInput(messages=(Message(role="user", content=f"case {index}"),)),
-        )
-        for index in range(9)
-    )
-    now = datetime.now(UTC)
-    observations = []
-    for index, variant in enumerate(variants):
-        if index == 5:
-            continue
-        status = "transport_error" if index == 3 else "unknown" if index == 4 else "success"
-        observations.append(
-            Observation(
-                operation_id=uuid4(),
-                run_id=snapshot.id,
-                work_item_id=variant.id,
-                status=status,
-                started_at=now,
-                finished_at=now,
-                error_code="provider_http_503" if index == 3 else None,
-                truncated=index == 2,
-                payload=ChatOutput(
-                    content=f"reply {index}",
-                    usage=TokenUsage(input_tokens=5),
-                    raw_content_bytes=100,
-                    content_redacted=index == 0,
-                )
-                if status == "success"
-                else None,
-            )
-        )
-    judgments = []
-    for index in (0, 1, 2, 6, 7, 8):
-        observation = next(item for item in observations if item.work_item_id == variants[index].id)
-        judgments.append(
-            Judgment(
-                variant_id=variants[index].id,
-                check_id="test.check",
-                check_version="1",
-                rubric_version="1",
-                security_verdict=("weakness", "pass", "inconclusive")[index % 3],
-                control_outcome=("answered", "over_refusal", None)[index % 3]
-                if index >= 6
-                else None,
-                evidence=(
-                    EvidenceRef(observation_id=observation.id, quote=observation.payload.content),
-                ),
-                rationale="Evidence",
-            )
-        )
-    observations.append(
-        Observation(
-            operation_id=uuid4(),
-            run_id=snapshot.id,
-            work_item_id=uuid4(),
-            actor="judge",
-            status="transport_error",
-            error_code="provider_http_503",
-            started_at=now,
-        )
-    )
-    return RunView(
-        snapshot=snapshot,
-        state="running",
-        variants=variants,
-        observations=tuple(observations),
-        judgments=tuple(judgments),
-        attempts=(
-            StageAttempt(
-                run_id=snapshot.id,
-                work_item_id=variants[3].id,
-                stage="judge",
-                attempt=1,
-                state="failed",
-                error_code="provider_http_503",
-            ),
-        ),
-    )
 
 
 def test_delivery_judgments_controls_and_unknown_usage_are_independent():
@@ -215,18 +113,6 @@ def test_impossible_or_duplicate_lineage_is_an_actionable_error(mutation):
     with pytest.raises(AppError) as error:
         summarize_run(view.model_copy(update=mutation(view)))
     assert error.value.code == "results_corrupt"
-
-
-def alternate(view, **changes):
-    return view.model_copy(
-        update={
-            "snapshot": view.snapshot.model_copy(update={"id": uuid4(), **changes}),
-            "variants": (),
-            "observations": (),
-            "judgments": (),
-            "attempts": (),
-        }
-    )
 
 
 def test_comparison_public_counts_and_conservative_relations():
@@ -424,8 +310,6 @@ def test_public_compare_reports_counts_and_rejects_missing_or_duplicate_ids(tmp_
 
 def test_coherent_finding_detail_and_uuid_cursor_pages(tmp_path):
     from asclepius.domain import FindingOutput, JudgmentOutput
-    from tests.cli.storage_fixtures import OWNER
-    from tests.cli.test_storage import observed_variant
 
     async def scenario():
         repo, snapshot, _ = await prepare(tmp_path)

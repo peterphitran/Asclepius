@@ -17,9 +17,9 @@ from urllib.parse import urlsplit
 
 import httpx
 
-try:
+if __package__:
     from .pipeline_fixture import isolated_python
-except ImportError:
+else:
     from pipeline_fixture import isolated_python
 
 EMPTY_REPLY_RATIONALE = (

@@ -1,14 +1,8 @@
 import json
-import subprocess
-import sys
 
 import pytest
 
-
-def run_cli(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, "-m", "asclepius", *args], capture_output=True, text=True, timeout=10
-    )
+from tests.cli.cli_support import run_cli
 
 
 def test_module_help_does_not_need_api_database_or_credentials() -> None:

@@ -5,8 +5,7 @@ import pytest
 
 from asclepius.exports import render_report
 from asclepius.results import assess_runs
-from tests.cli.test_exports import hostile_view
-from tests.cli.test_results import alternate, evidence_view
+from tests.cli.view_support import alternate, evidence_view, hostile_view
 
 GOLDEN = Path(__file__).parent / "fixtures" / "exports"
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

@@ -7,8 +7,8 @@ import sys
 import pytest
 
 from asclepius.storage import Repository
-from tests.cli.storage_fixtures import ready, run
-from tests.cli.test_services import prompts
+from tests.cli.cli_support import evaluator_file
+from tests.cli.storage_fixtures import prompts, ready, run
 
 
 def cli(directory, *arguments, env=None):
@@ -25,18 +25,6 @@ def target_file(tmp_path, name="target"):
     path = tmp_path / f"{name}.toml"
     path.write_text(
         f'[target]\nname = "{name}"\nmodel = "test-target"\nsecret_ref = "env:CLI_TEST_KEY"\n',
-        encoding="utf-8",
-    )
-    return path
-
-
-def evaluator_file(tmp_path):
-    path = tmp_path / "evaluator.toml"
-    path.write_text(
-        "\n".join(
-            f'[roles.{role}]\nmodel = "test-evaluator"\nsecret_ref = "env:CLI_TEST_KEY"\n'
-            for role in ("selector", "generator", "judge", "reporter")
-        ),
         encoding="utf-8",
     )
     return path

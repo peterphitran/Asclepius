@@ -1,14 +1,23 @@
 import asyncio
 from contextlib import ExitStack
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
 from asclepius.domain import (
+    ChatInput,
+    ChatOutput,
     CheckDefinition,
     EvaluatorConfig,
+    GenerationOutput,
+    Message,
+    Observation,
+    OperationRequest,
     ProfileConfig,
+    PromptSnapshot,
     RunSnapshot,
     TargetConfig,
+    Variant,
 )
 from asclepius.maintenance import instance_lock, readiness_lock
 from asclepius.storage import Repository
@@ -97,3 +106,49 @@ async def prepare(data_dir: Path, claim: bool = True, **kwargs):
 
 def run(awaitable):
     return asyncio.run(awaitable)
+
+
+async def observed_variant(repo, snapshot):
+    variant = Variant(
+        check_id="test.check",
+        check_version="1",
+        kind="attack",
+        strategy="override",
+        payload=ChatInput(messages=(Message(role="user", content="hello"),)),
+    )
+    variant_id = variant.id
+    generator_work = str(uuid4())
+    await repo.register_work_item(str(snapshot.id), generator_work, "test.check", instance_id=OWNER)
+    await repo.commit_stage(
+        str(snapshot.id),
+        generator_work,
+        "generator",
+        GenerationOutput(variants=(variant,)),
+        instance_id=OWNER,
+    )
+    request = OperationRequest(
+        run_id=snapshot.id,
+        work_item_id=variant_id,
+        payload=ChatInput(messages=(Message(role="user", content="hello"),)),
+    )
+    intent = await repo.begin_operation(request, instance_id=OWNER)
+    assert intent.operation_id == request.id
+    assert intent.created is True
+    observation = Observation(
+        operation_id=request.id,
+        run_id=snapshot.id,
+        work_item_id=variant_id,
+        status="success",
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+        payload=ChatOutput(content="synthetic reply"),
+    )
+    await repo.save_observation(observation, instance_id=OWNER)
+    return request, observation
+
+
+def prompts():
+    return tuple(
+        PromptSnapshot(role=role, version="test-v1", content=f"Test {role} contract")
+        for role in ("selector", "generator", "judge", "reporter")
+    )

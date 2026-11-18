@@ -1,12 +1,11 @@
 import asyncio
 import json
-from datetime import UTC, datetime
 
 import pytest
 from jsonschema import Draft202012Validator
 
-from asclepius.domain import AppError, ChatOutput, Observation
-from tests.cli.test_agents import harness, target
+from asclepius.domain import AppError
+from tests.cli.agent_support import harness, success_observation, target
 
 
 def test_attack_schema_rejects_control_outcomes(monkeypatch):
@@ -55,18 +54,7 @@ def test_invalid_attack_output_fails_at_gateway_with_observation(monkeypatch):
 
         async def execute(call):
             request = call.request
-            now = datetime.now(UTC)
-            obs = Observation(
-                operation_id=request.id,
-                run_id=request.run_id,
-                work_item_id=request.work_item_id,
-                actor=request.actor,
-                status="success",
-                started_at=now,
-                finished_at=now,
-                payload=ChatOutput(content=raw),
-                request_payload=request.payload,
-            )
+            obs = success_observation(request, raw)
             observations.append(obs)
             return obs
 
@@ -188,18 +176,7 @@ def test_empty_quote_output_fails_at_gateway(monkeypatch):
 
         async def execute(call):
             request = call.request
-            now = datetime.now(UTC)
-            obs = Observation(
-                operation_id=request.id,
-                run_id=request.run_id,
-                work_item_id=request.work_item_id,
-                actor=request.actor,
-                status="success",
-                started_at=now,
-                finished_at=now,
-                payload=ChatOutput(content=raw),
-                request_payload=request.payload,
-            )
+            obs = success_observation(request, raw)
             observations.append(obs)
             return obs
 

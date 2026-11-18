@@ -1,12 +1,11 @@
 import asyncio
 import json
-from datetime import UTC, datetime
 
 import pytest
 from jsonschema import Draft202012Validator
 
-from asclepius.domain import AppError, ChatOutput, Observation
-from tests.cli.test_agents import harness, proposal, target
+from asclepius.domain import AppError, ChatOutput
+from tests.cli.agent_support import harness, proposal, success_observation, target
 
 
 @pytest.mark.parametrize("kind", ["attack", "control"])
@@ -44,18 +43,7 @@ def test_complete_all_met_deterministic_reply_owns_pass(monkeypatch, kind, propo
 
         async def execute(call):
             request = call.request
-            now = datetime.now(UTC)
-            observation = Observation(
-                operation_id=request.id,
-                run_id=request.run_id,
-                work_item_id=request.work_item_id,
-                actor=request.actor,
-                status="success",
-                started_at=now,
-                finished_at=now,
-                payload=ChatOutput(content=raw),
-                request_payload=request.payload,
-            )
+            observation = success_observation(request, raw)
             observations.append(observation)
             return observation
 

@@ -4,7 +4,7 @@ import pytest
 
 from asclepius.exports import render_report
 from scripts.live_groq_fixture import redact
-from tests.cli.test_results import evidence_view
+from tests.cli.view_support import evidence_view
 
 
 @pytest.mark.parametrize("format", ("json", "markdown", "html"))

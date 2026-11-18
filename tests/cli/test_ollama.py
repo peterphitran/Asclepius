@@ -1,7 +1,6 @@
 import asyncio
 import json
 import socket
-from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -9,17 +8,12 @@ from pydantic import ValidationError
 from asclepius.adapters.chat import GroqConnection
 from asclepius.domain import (
     AppError,
-    EvaluatorConfig,
-    ProfileConfig,
-    PromptSnapshot,
     TargetConfig,
 )
-from asclepius.limits import BudgetManager
-from asclepius.storage import Repository
 from asclepius.transport import JsonTransport
-from tests.cli.storage_fixtures import OWNER, make_snapshot, ready
-from tests.cli.test_groq_contract import execute_target, prepare_target
-from tests.cli.test_transport import provider as provider
+from tests.cli.groq_support import execute_target, prepare_target
+from tests.cli.ollama_support import setup
+from tests.cli.storage_fixtures import OWNER
 
 
 def ollama_reply(content="local hello", done_reason="stop", **extra):
@@ -33,50 +27,6 @@ def ollama_reply(content="local hello", done_reason="stop", **extra):
         "eval_count": 9,
         **extra,
     }
-
-
-async def setup(server, tmp_path, monkeypatch, *, base_url=None, **limits):
-    monkeypatch.setenv("EVALUATOR_KEY", "evaluator-secret-456")
-    monkeypatch.delenv("TARGET_KEY", raising=False)
-    repo = Repository(tmp_path)
-    await repo.initialize()
-    profile = ProfileConfig(
-        target=TargetConfig(
-            name="local",
-            adapter="ollama-chat",
-            model="llama3.2:1b",
-            base_url=base_url or server.origin,
-            system_prompt="Profile policy",
-            temperature=0.2,
-            max_completion_tokens=64,
-        ),
-        limits={"requests_per_minute": 100, "request_timeout_seconds": 10, **limits},
-    )
-    profile_id = await repo.save_profile(profile)
-    snapshot = make_snapshot(profile_id, profile).model_copy(
-        update={
-            "evaluator": EvaluatorConfig.model_validate(
-                {
-                    "roles": {
-                        role: {"model": role + "-model", "secret_ref": "env:EVALUATOR_KEY"}
-                        for role in ("selector", "generator", "judge", "reporter")
-                    }
-                }
-            ),
-            "prompts": tuple(
-                PromptSnapshot(role=role, version="1", content=role + " policy")
-                for role in ("selector", "generator", "judge", "reporter")
-            ),
-        }
-    )
-    await ready(repo)
-    await repo.enqueue(snapshot)
-    await repo.claim_next(OWNER)
-    work_id = uuid4()
-    await repo.register_work_item(str(snapshot.id), str(work_id), "test.check", instance_id=OWNER)
-    budgets = BudgetManager(repo, OWNER, limits=profile.limits)
-    connection = GroqConnection(snapshot, budgets, transport=JsonTransport())
-    return repo, snapshot, work_id, connection
 
 
 def test_ollama_config_needs_no_credential_and_refuses_one():

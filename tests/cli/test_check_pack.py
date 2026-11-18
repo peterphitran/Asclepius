@@ -98,7 +98,7 @@ def test_pack_queue_uses_pinned_plan(tmp_path, monkeypatch, capsys):
 
     from asclepius.domain import ProfileConfig, TargetConfig
     from asclepius.storage import Repository
-    from tests.cli.test_cli_profiles import evaluator_file
+    from tests.cli.cli_support import evaluator_file
 
     async def setup():
         repo = Repository(tmp_path / "data")

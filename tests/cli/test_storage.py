@@ -7,7 +7,6 @@ import pytest
 from asclepius.domain import (
     AppError,
     ChatInput,
-    ChatOutput,
     EvidenceRef,
     Finding,
     FindingOutput,
@@ -23,7 +22,15 @@ from asclepius.domain import (
     Variant,
 )
 from asclepius.storage import Repository
-from tests.cli.storage_fixtures import OWNER, REPLACEMENT, make_snapshot, prepare, ready, run
+from tests.cli.storage_fixtures import (
+    OWNER,
+    REPLACEMENT,
+    make_snapshot,
+    observed_variant,
+    prepare,
+    ready,
+    run,
+)
 
 
 def selection(rationale="requested check"):
@@ -199,45 +206,6 @@ def test_stage_and_event_rollback_together(tmp_path):
         )
 
     run(scenario())
-
-
-async def observed_variant(repo, snapshot):
-    variant = Variant(
-        check_id="test.check",
-        check_version="1",
-        kind="attack",
-        strategy="override",
-        payload=ChatInput(messages=(Message(role="user", content="hello"),)),
-    )
-    variant_id = variant.id
-    generator_work = str(uuid4())
-    await repo.register_work_item(str(snapshot.id), generator_work, "test.check", instance_id=OWNER)
-    await repo.commit_stage(
-        str(snapshot.id),
-        generator_work,
-        "generator",
-        GenerationOutput(variants=(variant,)),
-        instance_id=OWNER,
-    )
-    request = OperationRequest(
-        run_id=snapshot.id,
-        work_item_id=variant_id,
-        payload=ChatInput(messages=(Message(role="user", content="hello"),)),
-    )
-    intent = await repo.begin_operation(request, instance_id=OWNER)
-    assert intent.operation_id == request.id
-    assert intent.created is True
-    observation = Observation(
-        operation_id=request.id,
-        run_id=snapshot.id,
-        work_item_id=variant_id,
-        status="success",
-        started_at=datetime.now(UTC),
-        finished_at=datetime.now(UTC),
-        payload=ChatOutput(content="synthetic reply"),
-    )
-    await repo.save_observation(observation, instance_id=OWNER)
-    return request, observation
 
 
 def test_judgment_finding_and_repeated_writes_preserve_provenance(tmp_path):

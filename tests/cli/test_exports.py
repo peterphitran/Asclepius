@@ -6,61 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from asclepius.domain import AppError, ExportArtifact, Finding
+from asclepius.domain import AppError, ExportArtifact
 from asclepius.exports import render_report, safe_terminal, write_export
 from asclepius.results import assess_runs
-from tests.cli.test_results import HOSTILE, alternate, evidence_view
-
-
-def hostile_view():
-    view = evidence_view()
-    check = view.snapshot.checks[0].model_copy(
-        update={
-            "family": HOSTILE,
-            "objective": HOSTILE,
-            "rubric": HOSTILE,
-            "system_prompt": HOSTILE,
-            "strategies": (HOSTILE,),
-            "benign_control": HOSTILE,
-        }
-    )
-    target = view.snapshot.profile.target.model_copy(
-        update={"model": HOSTILE, "system_prompt": HOSTILE}
-    )
-    snapshot = view.snapshot.model_copy(
-        update={
-            "checks": (check, view.snapshot.checks[1]),
-            "profile": view.snapshot.profile.model_copy(update={"target": target}),
-        }
-    )
-    observation = view.observations[0]
-    observation = observation.model_copy(
-        update={"payload": observation.payload.model_copy(update={"content": HOSTILE})}
-    )
-    judgment = view.judgments[0].model_copy(
-        update={
-            "rationale": HOSTILE,
-            "evidence": (view.judgments[0].evidence[0].model_copy(update={"quote": HOSTILE}),),
-        }
-    )
-    finding = Finding(
-        run_id=snapshot.id,
-        variant_id=view.variants[0].id,
-        judgment_id=judgment.id,
-        severity="high",
-        description=HOSTILE,
-        reproduction=HOSTILE,
-        recommendation=HOSTILE,
-        evidence=judgment.evidence,
-    )
-    return view.model_copy(
-        update={
-            "snapshot": snapshot,
-            "observations": (observation, *view.observations[1:]),
-            "judgments": (judgment, *view.judgments[1:]),
-            "findings": (finding,),
-        }
-    )
+from tests.cli.view_support import HOSTILE, alternate, evidence_view, hostile_view
 
 
 class Elements(HTMLParser):

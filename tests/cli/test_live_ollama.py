@@ -5,8 +5,8 @@ import urllib.request
 
 import pytest
 
-from tests.cli.test_groq_contract import execute_target
-from tests.cli.test_ollama import setup
+from tests.cli.groq_support import execute_target
+from tests.cli.ollama_support import setup
 
 
 def _live_settings():

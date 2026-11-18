@@ -3,16 +3,9 @@ from uuid import uuid4
 
 import pytest
 
-from asclepius.domain import AppError, PromptSnapshot, RunState
+from asclepius.domain import AppError, RunState
 from asclepius.services import EvaluationService
-from tests.cli.storage_fixtures import OWNER, prepare, run
-
-
-def prompts():
-    return tuple(
-        PromptSnapshot(role=role, version="test-v1", content=f"Test {role} contract")
-        for role in ("selector", "generator", "judge", "reporter")
-    )
+from tests.cli.storage_fixtures import OWNER, prepare, prompts, run
 
 
 def test_profiles_keep_stable_identity_revision_and_history(tmp_path):

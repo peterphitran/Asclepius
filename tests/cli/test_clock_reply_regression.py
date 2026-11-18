@@ -2,10 +2,8 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 from asclepius.adapters import chat
+from tests.cli.groq_support import prepare_target, setup
 from tests.cli.storage_fixtures import OWNER
-from tests.cli.test_groq_contract import groq as groq
-from tests.cli.test_groq_contract import prepare_target, setup
-from tests.cli.test_transport import provider as provider
 
 
 def test_verified_https_reply_survives_utc_reversal(groq, tmp_path, monkeypatch):
