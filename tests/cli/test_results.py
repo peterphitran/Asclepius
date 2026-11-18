@@ -1,7 +1,7 @@
 import json
 import threading
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -22,7 +22,7 @@ from asclepius.domain import (
     TokenUsage,
     Variant,
 )
-from asclepius.results import assess_runs, compare_runs, finding_detail, summarize_run
+from asclepius.results import assess_runs, finding_detail, summarize_run
 from asclepius.storage import Repository
 from tests.cli.storage_fixtures import make_snapshot, prepare, run
 from tests.cli.test_cli_help import run_cli
@@ -335,7 +335,7 @@ def test_coherent_read_preserves_order_and_old_view_equality(tmp_path):
             with pytest.raises(AppError) as error:
                 await repo.read_runs(identities)
             assert error.value.code == code
-        comparison = await compare_runs(repo, [str(first.id), str(second.id)])
+        comparison = assess_runs(await repo.read_runs([str(first.id), str(second.id)]))
         assert [s.attacks.generated for s in comparison.summaries] == [0, 0]
 
     run(scenario())
@@ -471,11 +471,11 @@ def test_coherent_finding_detail_and_uuid_cursor_pages(tmp_path):
         tail = await repo.list_findings(str(snapshot.id), limit=2, cursor=page.next_cursor)
         assert [f.id for f in (*page.items, *tail.items)] == sorted(f.id for f in findings)
         assert tail.next_cursor is None
-        detail = await repo.read_finding_detail(str(findings[0].id).upper())
+        raw = str(findings[0].id).upper()
+        detail = finding_detail(await repo.read_finding_view(raw), UUID(raw))
         assert detail.description == "finding 0"
         assert detail.captured_at is not None
         assert detail.observation.id == detail.evidence[0].observation_id
-        assert await repo.read_finding(str(findings[0].id)) == findings[0]
         return findings[0]
 
     finding = run(scenario())

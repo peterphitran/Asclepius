@@ -18,17 +18,16 @@ def prompts():
 def test_profiles_keep_stable_identity_revision_and_history(tmp_path):
     async def scenario():
         repo, snapshot, _ = await prepare(tmp_path)
-        service = EvaluationService(repo)
         record = await repo.get_profile(str(snapshot.profile_id))
         assert record.revision == 1
         changed = record.config.model_copy(
             update={"target": record.config.target.model_copy(update={"name": "renamed"})}
         )
-        assert await service.save_profile(changed, profile_id=str(record.id)) == str(record.id)
+        assert await repo.save_profile(changed, profile_id=str(record.id)) == str(record.id)
         edited = await repo.get_profile("renamed")
         assert edited.id == record.id
         assert edited.revision == 2
-        await service.save_profile(changed, profile_id=str(record.id))
+        await repo.save_profile(changed, profile_id=str(record.id))
         assert (await repo.get_profile("renamed")).revision == 2
         await repo.remove_profile("renamed")
         with pytest.raises(AppError) as error:
@@ -124,17 +123,16 @@ def test_retry_links_new_identity_and_pins_source_despite_profile_edits(
 def test_cancellation_is_durable_without_daemon_and_terminal_rejection(tmp_path):
     async def scenario():
         repo, queued, _ = await prepare(tmp_path, claim=False)
-        service = EvaluationService(repo)
-        assert (await service.cancel(str(queued.id))).state == RunState.CANCELLED
+        assert (await repo.request_cancel(str(queued.id))).state == RunState.CANCELLED
         with pytest.raises(AppError) as error:
-            await service.cancel(str(queued.id))
+            await repo.request_cancel(str(queued.id))
         assert error.value.code == "invalid_transition"
         _, active, _ = await prepare(tmp_path)
-        view = await service.cancel(str(active.id))
+        view = await repo.request_cancel(str(active.id))
         assert view.state == RunState.RUNNING
         assert view.cancel_requested is True
         before = await repo.events(str(active.id))
-        assert (await service.cancel(str(active.id))).cancel_requested is True
+        assert (await repo.request_cancel(str(active.id))).cancel_requested is True
         assert await repo.events(str(active.id)) == before
 
     run(scenario())
@@ -145,7 +143,7 @@ def test_removed_profile_revokes_new_submissions_and_retries_not_history(tmp_pat
 
     async def scenario():
         repo, snapshot, _ = await prepare(tmp_path, claim=False)
-        await EvaluationService(repo).cancel(str(snapshot.id))
+        await repo.request_cancel(str(snapshot.id))
         await repo.remove_profile(str(snapshot.profile_id))
         with pytest.raises(AppError) as error:
             await EvaluationService(repo).retry(str(snapshot.id))
@@ -172,7 +170,7 @@ def test_retry_rejects_non_retryable_states(tmp_path, state):
 def test_cancelled_run_records_the_same_terminal_reason_in_view_and_event(tmp_path):
     async def scenario():
         repo, snapshot, _ = await prepare(tmp_path, claim=False)
-        cancelled = await EvaluationService(repo).cancel(str(snapshot.id))
+        cancelled = await repo.request_cancel(str(snapshot.id))
         event = (await repo.events(str(snapshot.id)))[-1]
         assert cancelled.reason == "user_cancelled"
         assert event["data"]["reason"] == cancelled.reason
@@ -224,14 +222,14 @@ def test_name_matching_removed_uuid_cannot_restore_permission_for_its_runs(tmp_p
             str(source.profile_id), source.evaluator, source.checks, prompts=prompts()
         )
         saved = await repo.read_run(identity)
-        await service.cancel(identity)
+        await repo.request_cancel(identity)
         await repo.remove_profile(str(source.profile_id))
         impostor = source.profile.model_copy(
             update={
                 "target": source.profile.target.model_copy(update={"name": str(source.profile_id)})
             }
         )
-        other_id = await service.save_profile(impostor)
+        other_id = await repo.save_profile(impostor)
         assert other_id != str(source.profile_id)
         with pytest.raises(AppError) as error:
             await service.retry(identity)
@@ -263,7 +261,7 @@ def test_pagination_has_explicit_cursor_and_rejects_invalid_input(tmp_path):
                 await repo.list_runs(**arguments)
             assert error.value.exit_code == 2
         with pytest.raises(AppError) as error:
-            await repo.read_finding(str(uuid4()))
+            await repo.read_finding_view(str(uuid4()))
         assert error.value.exit_code == 3
 
     run(scenario())

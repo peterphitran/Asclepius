@@ -284,7 +284,6 @@ def test_judgment_finding_and_repeated_writes_preserve_provenance(tmp_path):
         page = await repo.list_findings(str(snapshot.id))
         assert page.items == (finding,)
         assert page.next_cursor is None
-        assert await repo.read_finding(str(finding.id)) == finding
 
     run(scenario())
 

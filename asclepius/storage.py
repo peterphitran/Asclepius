@@ -17,7 +17,6 @@ from asclepius.domain import (
     BudgetReservation,
     DaemonStatus,
     Finding,
-    FindingDetail,
     FindingOutput,
     GenerationOutput,
     Judgment,
@@ -1011,9 +1010,7 @@ class Repository:
 
         return await self._run(action)
 
-    async def read_finding_detail(self, finding_id: str) -> FindingDetail:
-        from asclepius.results import finding_detail
-
+    async def read_finding_view(self, finding_id: str) -> RunView:
         try:
             identity = UUID(finding_id)
         except ValueError:
@@ -1025,10 +1022,9 @@ class Repository:
             ).fetchone()
             if row is None:
                 raise AppError("not_found", "Finding not found.", 3)
-            view = self._view(connection, self._run_row(connection, row[0])).model_copy(
+            return self._view(connection, self._run_row(connection, row[0])).model_copy(
                 update={"captured_at": datetime.now(UTC)}
             )
-            return finding_detail(view, identity)
 
         return await self._run(action)
 
@@ -1140,17 +1136,6 @@ class Repository:
                 ),
                 next_cursor=rows[limit - 1]["id"] if len(rows) > limit else None,
             )
-
-        return await self._run(action)
-
-    async def read_finding(self, finding_id: str) -> Finding:
-        def action(connection):
-            row = connection.execute(
-                "SELECT document_json FROM findings WHERE id=?", (finding_id,)
-            ).fetchone()
-            if row is None:
-                raise AppError("not_found", "Finding not found.", 3)
-            return Finding.model_validate_json(row[0])
 
         return await self._run(action)
 

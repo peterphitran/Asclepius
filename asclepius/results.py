@@ -20,7 +20,6 @@ from asclepius.domain import (
     UsageCoverage,
     Variant,
 )
-from asclepius.storage import Repository
 
 
 @dataclass(frozen=True)
@@ -248,12 +247,6 @@ def assess_runs(views: tuple[RunView, ...]) -> Comparison:
             differences=tuple(differences),
         ),
     )
-
-
-async def compare_runs(repo: Repository, run_ids: list[str]) -> Comparison:
-    if len(run_ids) < 2:
-        raise AppError("arguments", "Comparison requires at least two distinct runs.", 2)
-    return assess_runs(await repo.read_runs(run_ids))
 
 
 def finding_detail(view: RunView, finding_id: UUID) -> FindingDetail:

@@ -12,7 +12,6 @@ from asclepius.domain import (
     PromptSnapshot,
     RunSnapshot,
     RunState,
-    RunView,
     SubmissionPlan,
 )
 from asclepius.storage import Repository
@@ -69,9 +68,6 @@ class EvaluationService:
     def __init__(self, repo: Repository) -> None:
         self.repo = repo
 
-    async def save_profile(self, config: ProfileConfig, *, profile_id: str | None = None) -> str:
-        return await self.repo.save_profile(config, profile_id=profile_id)
-
     async def submit(
         self,
         profile: str,
@@ -92,9 +88,6 @@ class EvaluationService:
             prompts=plan.prompts,
         )
         return await self.repo.enqueue(snapshot)
-
-    async def cancel(self, run_id: str) -> RunView:
-        return await self.repo.request_cancel(run_id)
 
     async def retry(self, run_id: str) -> str:
         source = await self.repo.read_run(run_id)
