@@ -1,17 +1,55 @@
-import hashlib
 import html
 import json
-import os
-import stat
-import tempfile
 import unicodedata
-from pathlib import Path
-from typing import Literal
-
-import portalocker
+from collections.abc import Iterator
+from typing import Literal, NamedTuple
 
 from asclepius.domain import AppError, Comparison, ExportArtifact, RunResults, RunView
+from asclepius.export_files import write_export
 from asclepius.results import summarize_run
+
+__all__ = ["render_report", "safe_terminal", "write_export"]
+
+NOTICE = (
+    "Counts describe saved evidence as of capture. Generated cases are actual; planned cases "
+    "are unknown. Missing judgment is not a pass. Delivery and judgments are independent. "
+    "Remote revision is unknown. Generated input matching is not established. "
+    "No paired deltas, ranking or causal inference is asserted."
+)
+FAMILY_HEADERS = (
+    "Run",
+    "Requested checks",
+    "Generated attacks",
+    "Weakness",
+    "Pass",
+    "Inconclusive",
+    "Missing attack judgment",
+    "Generated controls",
+    "Answered",
+    "Over refusal",
+    "Inconclusive controls",
+    "Missing control judgment",
+)
+HTML_HEAD = (
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width, initial-scale=1">'
+    '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; '
+    "style-src &#39;unsafe-inline&#39;; base-uri &#39;none&#39;; "
+    'form-action &#39;none&#39;">'
+    "<title>Asclepius results</title><style>"
+    "body{font:16px system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;"
+    "color:#172338;background:#fff}pre{white-space:pre-wrap;overflow-wrap:anywhere;"
+    "padding:1rem;background:#f2f5f9}table{border-collapse:collapse;width:100%}"
+    "td,th{border:1px solid #bcc9da;padding:.5rem;text-align:left}"
+    "svg{width:100%;max-width:650px}h2{margin-top:2rem}</style></head><body>"
+    "<h1>Asclepius results</h1>"
+)
+
+
+class Section(NamedTuple):
+    title: str
+    data: object
+    headline: bool = False
 
 
 def safe_terminal(text: str) -> str:
@@ -30,8 +68,8 @@ def _literal(text: str) -> str:
     return "\n".join("    " + safe_terminal(line) for line in text.split("\n")) + "\n\n"
 
 
-def _sections(view: RunView, summary: RunResults):
-    yield (
+def _sections(view: RunView, summary: RunResults) -> Iterator[Section]:
+    yield Section(
         "Run identity and capture",
         {
             "run_id": str(summary.run_id),
@@ -46,16 +84,20 @@ def _sections(view: RunView, summary: RunResults):
             "remote_revision": "unknown",
             "generated_input_matching": "not_established",
         },
+        headline=True,
     )
-    yield "Target, evaluator, budgets and pinned checks", view.snapshot.model_dump(mode="json")
-    yield (
+    yield Section(
+        "Target, evaluator, budgets and pinned checks", view.snapshot.model_dump(mode="json")
+    )
+    yield Section(
         "Delivery and judgment denominators",
         {
             "attacks": summary.attacks.model_dump(mode="json"),
             "controls": summary.controls.model_dump(mode="json"),
         },
+        headline=True,
     )
-    yield (
+    yield Section(
         "Usage coverage and evaluator actors",
         {
             "target": summary.target_usage.model_dump(mode="json"),
@@ -65,18 +107,46 @@ def _sections(view: RunView, summary: RunResults):
                 "Token totals cover measured observations only. Missing counters are unknown."
             ),
         },
+        headline=True,
     )
-    yield "Stage diagnostics", [item.model_dump(mode="json") for item in view.attempts]
-    yield "Generated cases", [item.model_dump(mode="json") for item in view.variants]
-    yield (
+    yield Section("Stage diagnostics", [item.model_dump(mode="json") for item in view.attempts])
+    yield Section("Generated cases", [item.model_dump(mode="json") for item in view.variants])
+    yield Section(
         "Observations and raw byte metadata",
         [item.model_dump(mode="json") for item in view.observations],
     )
-    yield (
+    yield Section(
         "Judgments, assertions and metric denominators",
         [item.model_dump(mode="json") for item in view.judgments],
     )
-    yield "Findings and evidence", [item.model_dump(mode="json") for item in view.findings]
+    yield Section("Findings and evidence", [item.model_dump(mode="json") for item in view.findings])
+
+
+def _family_rows(summaries: tuple[RunResults, ...]) -> Iterator[tuple[str, list[tuple]]]:
+    for family in dict.fromkeys(f.family for summary in summaries for f in summary.families):
+        rows = []
+        for index, summary in enumerate(summaries, 1):
+            row = next((item for item in summary.families if item.family == family), None)
+            if row is None:
+                rows.append((index,) + ("not-selected",) * (len(FAMILY_HEADERS) - 1))
+            else:
+                rows.append(
+                    (
+                        index,
+                        row.requested_checks,
+                        row.attacks.generated,
+                        row.attacks.weakness,
+                        row.attacks.passed,
+                        row.attacks.inconclusive,
+                        row.attacks.missing_judgment,
+                        row.controls.generated,
+                        row.controls.answered,
+                        row.controls.over_refusal,
+                        row.controls.inconclusive,
+                        row.controls.missing_judgment,
+                    )
+                )
+        yield family, rows
 
 
 def _chart(summary: RunResults) -> str:
@@ -100,6 +170,60 @@ def _chart(summary: RunResults) -> str:
     return "".join(elements) + "</svg>"
 
 
+def _markdown(runs, summaries, assessment) -> str:
+    parts = ["# Asclepius results\n\n", NOTICE + "\n\n"]
+    if assessment:
+        body = _json(assessment.model_dump(mode="json"))
+        parts.append("## Comparison assessment\n\n" + _literal(body))
+    for index, (run, summary) in enumerate(zip(runs, summaries, strict=True), 1):
+        parts.append(f"## Run {index}\n\n")
+        for section in _sections(run, summary):
+            parts.append(f"### {section.title}\n\n" + _literal(_json(section.data)))
+    parts.append("## Per-family comparison\n\n")
+    for family, rows in _family_rows(summaries):
+        parts.append(_literal(family))
+        parts.append(
+            "| "
+            + " | ".join(FAMILY_HEADERS)
+            + " |\n| "
+            + " | ".join("---" for _ in FAMILY_HEADERS)
+            + " |\n"
+        )
+        parts.extend("| " + " | ".join(map(str, values)) + " |\n" for values in rows)
+        parts.append("\n")
+    return "".join(parts)
+
+
+def _html(runs, summaries, assessment) -> str:
+    parts = [HTML_HEAD, f"<p>{NOTICE}</p>"]
+    if assessment:
+        body = _json(assessment.model_dump(mode="json"))
+        parts.append("<h2>Comparison assessment</h2><pre>" + html.escape(body) + "</pre>")
+    for index, (run, summary) in enumerate(zip(runs, summaries, strict=True), 1):
+        parts.append(f"<h2>Run {index}</h2>")
+        parts.append(_chart(summary))
+        for section in _sections(run, summary):
+            pre = f"<pre>{html.escape(_json(section.data))}</pre>"
+            if section.headline:
+                parts.append(f"<h3>{section.title}</h3>{pre}")
+            else:
+                parts.append(f"<details><summary>{section.title}</summary>{pre}</details>")
+    parts.append("<h2>Per-family comparison</h2>")
+    for family, rows in _family_rows(summaries):
+        parts.append(f"<h3>{html.escape(safe_terminal(family))}</h3>")
+        parts.append(
+            "<table><thead><tr>"
+            + "".join(f"<th>{h}</th>" for h in FAMILY_HEADERS)
+            + "</tr></thead><tbody>"
+        )
+        parts.extend(
+            "<tr>" + "".join(f"<td>{value}</td>" for value in values) + "</tr>" for values in rows
+        )
+        parts.append("</tbody></table>")
+    parts.append("</body></html>\n")
+    return "".join(parts)
+
+
 def render_report(
     view: RunView | Comparison, format: Literal["json", "markdown", "html"]
 ) -> ExportArtifact:
@@ -108,9 +232,8 @@ def render_report(
     else:
         runs, summaries, assessment = (view,), (summarize_run(view),), None
     if format == "json":
-        return ExportArtifact(
-            format=format,
-            content=_json(
+        content = (
+            _json(
                 {
                     "report_schema_version": 1,
                     "runs": [run.model_dump(mode="json") for run in runs],
@@ -118,220 +241,12 @@ def render_report(
                     "assessment": assessment.model_dump(mode="json") if assessment else None,
                 }
             )
-            + "\n",
+            + "\n"
         )
-    if format not in {"markdown", "html"}:
+    elif format == "markdown":
+        content = _markdown(runs, summaries, assessment)
+    elif format == "html":
+        content = _html(runs, summaries, assessment)
+    else:
         raise AppError("arguments", "Unsupported report format.", 2)
-    markdown = format == "markdown"
-    parts = (
-        ["# Asclepius results\n\n"]
-        if markdown
-        else [
-            '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width, initial-scale=1">'
-            '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; '
-            "style-src &#39;unsafe-inline&#39;; base-uri &#39;none&#39;; "
-            'form-action &#39;none&#39;">'
-            "<title>Asclepius results</title><style>"
-            "body{font:16px system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;"
-            "color:#172338;background:#fff}pre{white-space:pre-wrap;overflow-wrap:anywhere;"
-            "padding:1rem;background:#f2f5f9}table{border-collapse:collapse;width:100%}"
-            "td,th{border:1px solid #bcc9da;padding:.5rem;text-align:left}"
-            "svg{width:100%;max-width:650px}h2{margin-top:2rem}</style></head><body>"
-            "<h1>Asclepius results</h1>"
-        ]
-    )
-    notice = (
-        "Counts describe saved evidence as of capture. Generated cases are actual; planned cases "
-        "are unknown. Missing judgment is not a pass. Delivery and judgments are independent. "
-        "Remote revision is unknown. Generated input matching is not established. "
-        "No paired deltas, ranking or causal inference is asserted."
-    )
-    parts.append(notice + "\n\n" if markdown else f"<p>{notice}</p>")
-    if assessment:
-        body = _json(assessment.model_dump(mode="json"))
-        parts.append(
-            "## Comparison assessment\n\n" + _literal(body)
-            if markdown
-            else "<h2>Comparison assessment</h2><pre>" + html.escape(body) + "</pre>"
-        )
-    for index, (run, summary) in enumerate(zip(runs, summaries, strict=True), 1):
-        heading = f"Run {index}"
-        parts.append(f"## {heading}\n\n" if markdown else f"<h2>{heading}</h2>")
-        if not markdown:
-            parts.append(_chart(summary))
-        for title, value in _sections(run, summary):
-            body = _json(value)
-            if markdown:
-                parts.append(f"### {title}\n\n" + _literal(body))
-            elif title in {
-                "Run identity and capture",
-                "Delivery and judgment denominators",
-                "Usage coverage and evaluator actors",
-            }:
-                parts.append(f"<h3>{title}</h3><pre>{html.escape(body)}</pre>")
-            else:
-                parts.append(
-                    f"<details><summary>{title}</summary><pre>{html.escape(body)}</pre></details>"
-                )
-
-    parts.append("## Per-family comparison\n\n" if markdown else "<h2>Per-family comparison</h2>")
-    families = dict.fromkeys(family.family for summary in summaries for family in summary.families)
-    for family in families:
-        parts.append(
-            _literal(family) if markdown else f"<h3>{html.escape(safe_terminal(family))}</h3>"
-        )
-        headers = (
-            "Run",
-            "Requested checks",
-            "Generated attacks",
-            "Weakness",
-            "Pass",
-            "Inconclusive",
-            "Missing attack judgment",
-            "Generated controls",
-            "Answered",
-            "Over refusal",
-            "Inconclusive controls",
-            "Missing control judgment",
-        )
-        if markdown:
-            parts.append(
-                "| " + " | ".join(headers) + " |\n| " + " | ".join("---" for _ in headers) + " |\n"
-            )
-        else:
-            parts.append(
-                "<table><thead><tr>"
-                + "".join(f"<th>{h}</th>" for h in headers)
-                + "</tr></thead><tbody>"
-            )
-        for index, summary in enumerate(summaries, 1):
-            row = next((item for item in summary.families if item.family == family), None)
-            values = (index,) + (
-                ("not-selected",) * (len(headers) - 1)
-                if row is None
-                else (
-                    row.requested_checks,
-                    row.attacks.generated,
-                    row.attacks.weakness,
-                    row.attacks.passed,
-                    row.attacks.inconclusive,
-                    row.attacks.missing_judgment,
-                    row.controls.generated,
-                    row.controls.answered,
-                    row.controls.over_refusal,
-                    row.controls.inconclusive,
-                    row.controls.missing_judgment,
-                )
-            )
-            parts.append(
-                "| " + " | ".join(map(str, values)) + " |\n"
-                if markdown
-                else "<tr>" + "".join(f"<td>{value}</td>" for value in values) + "</tr>"
-            )
-        parts.append("\n" if markdown else "</tbody></table>")
-    if not markdown:
-        parts.append("</body></html>\n")
-    return ExportArtifact(format=format, content="".join(parts))
-
-
-def _regular_single(path: Path) -> os.stat_result | None:
-    try:
-        info = path.lstat()
-    except FileNotFoundError:
-        return None
-    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-        raise AppError(
-            "export_unsafe", "Export destination and lock must be regular single-link files."
-        )
-    return info
-
-
-def write_export(artifact: ExportArtifact, destination: Path, overwrite: bool = False) -> Path:
-    temporary = None
-    committed = False
-    try:
-        parent = destination.parent.resolve(strict=True)
-        name = destination.name
-        if (
-            not name
-            or name in {".", ".."}
-            or "\x00" in name
-            or (
-                os.name == "nt"
-                and (
-                    name.endswith((" ", "."))
-                    or ":" in name
-                    or (
-                        os.path.isreserved(name)
-                        if hasattr(os.path, "isreserved")
-                        else destination.is_reserved()
-                    )
-                )
-            )
-        ):
-            raise AppError("export_unsafe", "Unsafe export filename.")
-        target = parent / name
-        identity = os.path.normcase(str(target))
-        digest = hashlib.sha256(os.fsencode(identity)).hexdigest()
-        lock_path = parent / f".asclepius-export-{digest}.lock"
-        _regular_single(lock_path)
-        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(lock_path, flags, 0o600)
-        with os.fdopen(descriptor, "r+b") as lock:
-            info = _regular_single(lock_path)
-            opened = os.fstat(lock.fileno())
-            if info is None or (info.st_dev, info.st_ino) != (opened.st_dev, opened.st_ino):
-                raise AppError("export_unsafe", "Export lock identity changed.")
-            if os.name != "nt" and opened.st_uid != os.getuid():
-                raise AppError("export_unsafe", "Export lock belongs to another user.")
-            portalocker.lock(lock, portalocker.LOCK_EX)
-            try:
-                existing = _regular_single(target)
-                if existing is not None and not overwrite:
-                    raise AppError("export_exists", "Export destination already exists.", 2)
-                descriptor, temporary = tempfile.mkstemp(
-                    prefix=".asclepius-export-", suffix=".tmp", dir=parent
-                )
-                with os.fdopen(descriptor, "wb") as output:
-                    output.write(artifact.content.encode("utf-8"))
-                    output.flush()
-                    os.fsync(output.fileno())
-                _regular_single(target)
-                if overwrite:
-                    os.replace(temporary, target)
-                    temporary = None
-                else:
-                    os.link(temporary, target)
-                committed = True
-                if temporary is not None:
-                    os.unlink(temporary)
-                    temporary = None
-                if os.name != "nt":
-                    directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
-                    try:
-                        os.fsync(directory)
-                    finally:
-                        os.close(directory)
-            finally:
-                portalocker.unlock(lock)
-        return target
-    except FileExistsError:
-        raise AppError("export_exists", "Export destination already exists.", 2) from None
-    except (OSError, portalocker.LockException):
-        if committed:
-            raise AppError(
-                "export_committed", "Export was published; durability confirmation failed."
-            ) from None
-        raise AppError("export_error", "Cannot publish export on this filesystem.") from None
-    finally:
-        if temporary is not None:
-            try:
-                os.unlink(temporary)
-            except OSError:
-                raise AppError(
-                    "export_committed" if committed else "export_error",
-                    "Export was published; temporary cleanup failed."
-                    if committed
-                    else "Export was not published; temporary cleanup failed.",
-                ) from None
+    return ExportArtifact(format=format, content=content)
