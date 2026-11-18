@@ -5,13 +5,14 @@ import sys
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from asclepius import __version__
 from asclepius.checks import load_pack, load_pack_plan
 from asclepius.config import data_directory, load_evaluator, load_plan, load_target
 from asclepius.domain import AppError, Comparison, RunState
-from asclepius.exports import render_report, safe_terminal, write_export
+from asclepius.export_files import write_export
+from asclepius.exports import render_report, safe_terminal
 from asclepius.maintenance import migrate_storage
 from asclepius.process import (
     WSL_DAEMON_WARNING,
@@ -258,7 +259,12 @@ async def _findings_list(options, json_output: bool):
 
 async def _findings_show(options, json_output: bool):
     view = await _repo(options).read_finding_view(options.finding_id)
-    return finding_detail(view, UUID(options.finding_id))
+    try:
+        return finding_detail(view, UUID(options.finding_id))
+    except ValidationError:
+        raise AppError(
+            "storage_corrupt", "Invalid stored data. Preserve the database for inspection."
+        ) from None
 
 
 async def _compare(repo: Repository, run_ids: list[str]) -> Comparison:

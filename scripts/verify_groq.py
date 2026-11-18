@@ -19,6 +19,7 @@ import asclepius
 from asclepius.adapters import chat
 from asclepius.adapters.chat import GroqConnection
 from asclepius.domain import (
+    ROLES,
     ChatInput,
     CheckDefinition,
     EvaluatorConfig,
@@ -86,7 +87,7 @@ async def prove(data_dir, server, transport):
         ),
     )
     profile_id = await repo.save_profile(profile)
-    roles = ("selector", "generator", "judge", "reporter")
+    roles = ROLES
     snapshot = RunSnapshot(
         profile_id=profile_id,
         profile=profile,

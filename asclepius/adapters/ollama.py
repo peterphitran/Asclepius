@@ -5,17 +5,17 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from asclepius.domain import AppError, NonNegativeInt
 
 
-class _WireModel(BaseModel):
+class WireModel(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True, hide_input_in_errors=True)
 
 
-class _Message(_WireModel):
+class _Message(WireModel):
     role: Literal["assistant"]
     content: str
     tool_calls: list[dict] | None = None
 
 
-class _Reply(_WireModel):
+class _Reply(WireModel):
     model: str | None = None
     message: _Message
     done: Literal[True]

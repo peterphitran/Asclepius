@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from asclepius.domain import (
+    ROLES,
     ChatInput,
     ChatOutput,
     CheckDefinition,
@@ -58,12 +59,7 @@ def make_snapshot(profile_id: str, profile: ProfileConfig) -> RunSnapshot:
         profile_id=UUID(profile_id),
         profile=profile,
         evaluator=EvaluatorConfig.model_validate(
-            {
-                "roles": {
-                    role: {"model": "evaluator", "secret_ref": "env:KEY"}
-                    for role in ("selector", "generator", "judge", "reporter")
-                }
-            }
+            {"roles": {role: {"model": "evaluator", "secret_ref": "env:KEY"} for role in ROLES}}
         ),
         checks=(
             CheckDefinition(
@@ -150,5 +146,5 @@ async def observed_variant(repo, snapshot):
 def prompts():
     return tuple(
         PromptSnapshot(role=role, version="test-v1", content=f"Test {role} contract")
-        for role in ("selector", "generator", "judge", "reporter")
+        for role in ROLES
     )

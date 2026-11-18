@@ -12,7 +12,7 @@ from uuid import uuid4
 from asclepius.adapters.chat import GroqConnection
 from asclepius.agents import AgentRunner
 from asclepius.checks import load_pack_plan
-from asclepius.domain import ChatOutput, Observation
+from asclepius.domain import ROLES, ChatOutput, Observation
 from asclepius.models import EvaluationResult
 from asclepius.storage import Repository
 
@@ -37,8 +37,7 @@ async def verify(root: Path):
     evaluator = root / "evaluator.toml"
     evaluator.write_text(
         "\n".join(
-            f'[roles.{role}]\nmodel="synthetic"\nsecret_ref="env:PROOF_KEY"\n'
-            for role in ("selector", "generator", "judge", "reporter")
+            f'[roles.{role}]\nmodel="synthetic"\nsecret_ref="env:PROOF_KEY"\n' for role in ROLES
         )
     )
     cli(directory, "targets", "add", "proof", "--config", str(config))

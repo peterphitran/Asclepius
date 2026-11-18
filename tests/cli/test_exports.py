@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from asclepius.domain import AppError, ExportArtifact
-from asclepius.exports import render_report, safe_terminal, write_export
+from asclepius.export_files import write_export
+from asclepius.exports import render_report, safe_terminal
 from asclepius.results import assess_runs
 from tests.cli.view_support import HOSTILE, alternate, evidence_view, hostile_view
 

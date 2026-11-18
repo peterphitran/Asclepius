@@ -343,7 +343,14 @@ def _settle_failed_assertion(check, observation, facts, proposal, settled) -> Se
 
 
 def settle_verdict(
-    check, variant, observation, facts, proposal, evidence, *, quote_missing=False
+    check: CheckDefinition,
+    variant: Variant,
+    observation: Observation,
+    facts: tuple[AssertionResult, ...],
+    proposal: JudgmentProposal,
+    evidence: tuple[EvidenceRef, ...],
+    *,
+    quote_missing: bool = False,
 ) -> Settlement:
     failed = any(f.outcome == "not_met" for f in facts)
     settled = Settlement(

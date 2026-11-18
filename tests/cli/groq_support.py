@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict
 
 from asclepius.adapters.chat import GroqConnection
 from asclepius.domain import (
+    ROLES,
     ChatInput,
     EvaluatorConfig,
     GenerationOutput,
@@ -68,13 +69,12 @@ async def setup(groq, tmp_path, monkeypatch, *, variant=False, **limits):
                             "secret_ref": "env:EVALUATOR_KEY",
                             "base_url": server.origin + "/evaluator",
                         }
-                        for role in ("selector", "generator", "judge", "reporter")
+                        for role in ROLES
                     }
                 }
             ),
             "prompts": tuple(
-                PromptSnapshot(role=role, version="1", content=role + " policy")
-                for role in ("selector", "generator", "judge", "reporter")
+                PromptSnapshot(role=role, version="1", content=role + " policy") for role in ROLES
             ),
         }
     )

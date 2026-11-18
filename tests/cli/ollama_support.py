@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from asclepius.adapters.chat import GroqConnection
 from asclepius.domain import (
+    ROLES,
     EvaluatorConfig,
     ProfileConfig,
     PromptSnapshot,
@@ -37,13 +38,12 @@ async def setup(server, tmp_path, monkeypatch, *, base_url=None, **limits):
                 {
                     "roles": {
                         role: {"model": role + "-model", "secret_ref": "env:EVALUATOR_KEY"}
-                        for role in ("selector", "generator", "judge", "reporter")
+                        for role in ROLES
                     }
                 }
             ),
             "prompts": tuple(
-                PromptSnapshot(role=role, version="1", content=role + " policy")
-                for role in ("selector", "generator", "judge", "reporter")
+                PromptSnapshot(role=role, version="1", content=role + " policy") for role in ROLES
             ),
         }
     )

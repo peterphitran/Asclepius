@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import Field, ValidationError
 
 from asclepius.adapters import ollama
-from asclepius.adapters.ollama import _WireModel
+from asclepius.adapters.ollama import WireModel
 from asclepius.domain import (
     ROLES,
     AppError,
@@ -44,12 +44,12 @@ def token_upper_bound(body_json: str, max_completion_tokens: int) -> int:
     return input_tokens + max_completion_tokens
 
 
-class _Usage(_WireModel):
+class _Usage(WireModel):
     prompt_tokens: NonNegativeInt | None = None
     completion_tokens: NonNegativeInt | None = None
 
 
-class _ReplyMessage(_WireModel):
+class _ReplyMessage(WireModel):
     role: Literal["assistant"]
     content: str | None = None
     refusal: str | None = None
@@ -57,13 +57,13 @@ class _ReplyMessage(_WireModel):
     function_call: dict | None = None
 
 
-class _Choice(_WireModel):
+class _Choice(WireModel):
     index: Literal[0] = 0
     finish_reason: str
     message: _ReplyMessage
 
 
-class _Reply(_WireModel):
+class _Reply(WireModel):
     id: str | None = None
     model: str | None = None
     choices: list[_Choice] = Field(min_length=1, max_length=1)
