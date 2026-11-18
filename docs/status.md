@@ -1,4 +1,4 @@
-# Implementation Status
+# Implementation status
 
 Implementation checkpoint on 2026-10-29 America/Chicago, branch `codex/cli-evaluator`.
 
@@ -32,10 +32,10 @@ API is preserved on the local branch `wip/legacy-sweep-lifecycle`.
 | Daemon control | `asclepius/process.py`, `daemon.py` | Manual detached start, generation-bound readiness, heartbeat, duplicate exclusion, drain/stop. Claims within shared limits, heartbeats independently, and drains active work. |
 | Bounds | `asclepius/limits.py` | Shared request gates/rates and durable call/completion reservations, connected to provider components. Cancellation before dispatch releases allowance; uncertain dispatch retains it. |
 | Provider components | `asclepius/transport.py`, `adapters/chat.py`, `adapters/ollama.py`, `models.py` | Bounded HTTPS (plain HTTP only on loopback for a local Ollama target), independent credentials, redacted immutable requests, strict evaluator schemas, typed errors and validated retry timing. No automatic retries; coordinator persists their evidence. |
-| Saved results and exports | `asclepius/results.py`, `exports.py` | Coherent comparison summaries, separate attack/control/legacy outcomes, inert JSON/Markdown/HTML and atomic local publication. |
+| Saved results and exports | `asclepius/results.py`, `exports.py` | Coherent comparison summaries, separate attack and control outcomes, inert JSON/Markdown/HTML and atomic local publication. |
 | Checks and agents | `asclepius/checks.py`, `agents.py`, `packs/`, `prompts/` | Twenty pinned checks, three generated attacks and one code-owned control per check. Four role contracts require an injected prepared-request dispatch. Coordinator supplies durable dispatch. |
-| Local migrations | `asclepius/maintenance.py`, `migrations/` | New schema v4 and explicit stopped v1/v2/v3 upgrade, OS/maintenance locking, rollback, and local-only path policy. |
-| Tests | `tests/cli/` | Real HTTP/HTTPS provider fixtures, SQLite persistence and budgets, process checks, and a check that the CLI runs with every legacy web dependency blocked. See the [Task 7 execution results](verification/evidence/cli-pipeline.json) and [Task 8 recovery results](verification/evidence/cli-recovery.json). Native Windows skips the WSL-only mount test. |
+| Local migrations | `asclepius/maintenance.py`, `migrations/` | New schema v4 (older versions are rejected, not upgraded), OS/maintenance locking, rollback, and local-only path policy. |
+| Tests | `tests/cli/` | Real HTTP/HTTPS provider fixtures, SQLite persistence and budgets, process checks. See the [Task 7 execution results](verification/evidence/cli-pipeline.json) and [Task 8 recovery results](verification/evidence/cli-recovery.json). Native Windows skips the WSL-only mount test. |
 
 ## Missing product capabilities
 
@@ -43,8 +43,8 @@ Evaluator accuracy beyond the reviewed live runs, a physical human terminal clos
 host sleep or shutdown remain unverified. On WSL the daemon stops when WSL shuts its Linux
 side down after the last WSL session closes. Saved comparisons and exports use deterministic fixture evidence in
 [Task 9 verification](verification/evidence/cli-results.json).
-Legacy plans remain readable and can queue, but the role runner requires three strategies
-per check. Legacy judgments without check lineage cannot initiate Reporter. JSON-schema
+Submission rejects plans that cannot run, so every queued check has three strategies,
+evidence criteria and a severity rule. JSON-schema
 violation findings require the entire reply as evidence within the 4096-byte quote cap.
 Startup interrupts prior owned runs without replaying uncertain requests. Task 8 verifies
 queued and active cancellation, drain timeout, watcher OS interruption, three process-crash

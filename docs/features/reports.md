@@ -1,4 +1,4 @@
-# Reports and Charts
+# Reports and charts
 
 Status: JSON, Markdown, and self-contained HTML exports with inline SVG outcome/family
 counts are implemented. [Task 9](../verification/evidence/cli-results.json) records both

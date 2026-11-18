@@ -1,4 +1,4 @@
-# CLI Evaluator Implementation Plan
+# CLI evaluator implementation plan
 
 > **For agentic workers:** The user selected installed pstack skills for implementation. Follow poteto-mode and its Codex mapping, keep a decision trail, and verify each task before starting the next. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -18,7 +18,7 @@ Status: implementation started on `codex/cli-evaluator`. Tasks 1 through 5 are v
 [the Groq component evidence](../verification/evidence/cli-groq-components.json). Tasks 6 through 12 remain pending.
 Task 4 verifies control and budget components, not queued execution or physical terminal closure.
 
-## Global Constraints
+## Global constraints
 
 - Python 3.12 or newer. Preserve the existing Linux `.venv`; use WSL for it.
 - Local CLI; no Asclepius login, hosted API, Redis broker, or Postgres for the new runtime.
@@ -31,7 +31,7 @@ Task 4 verifies control and budget components, not queued execution or physical 
 - Preserve unrelated local changes, existing databases, and frontend backup. No pushes or PRs.
 - Windows and WSL require separate data directories and separate terminal-close proofs.
 
-## Review Focus
+## Review focus
 
 1. A credential disappears after submission: fail that run clearly without identity fallback; test in Tasks 3 and 7.
 2. Two profiles alias one destination: enforce shared bounds despite different names; test in Tasks 4 and 7.
@@ -222,7 +222,7 @@ Storage also supplies `save_profile(config: ProfileConfig, *, profile_id: str | 
 `register_work_item(run_id: str, work_item_id: str, check_id: str, variant_id: str | None = None, *, instance_id: str) -> None`.
 Omitting `profile_id` creates a profile and rejects duplicate names; supplying it explicitly
 edits the existing active identity, including a unique rename. Identical edits do not bump revision.
-These are persistence primitives, not public CLI services or proof of OS daemon ownership.
+These are low-level persistence operations, not public CLI services or proof of OS daemon ownership.
 New mutations fence against the current daemon and run owner inside their write transaction.
 Exact committed repeats may return saved content without mutation after terminalization.
 `OperationIntent.created` grants dispatch eligibility only when true; repeated pending,
@@ -254,7 +254,7 @@ check cancellation, ownership, and budgets before dispatch.
 `save_profile(config: ProfileConfig, *, profile_id: str | None = None) -> str`,
 `submit(profile: str, evaluator: EvaluatorConfig, checks: tuple[CheckDefinition, ...], *, prompts: tuple[PromptSnapshot, ...]) -> str`,
 `cancel(run_id: str) -> RunView`, `retry(run_id: str) -> str`.
-Repository extends the Task 2 profile/enqueue primitives and adds async
+Repository extends the Task 2 profile and enqueue operations and adds async
 `list_profiles(*, limit: int = 50, cursor: str | None = None) -> Page[ProfileRecord]`,
 `get_profile(identity: str | UUID) -> ProfileRecord`, `remove_profile(identity: str) -> str`,
 `request_cancel(run_id: str) -> RunView`,
@@ -482,7 +482,7 @@ tool execution, provider-availability stress tests, or implicit collection acces
 
 Design review on 2026-10-23 selected the mandatory prepared-dispatch design. The
 alternative was a domain-only invoker receiving role payloads. Both avoid direct hidden
-network calls; the selected seam exposes the already-finalized gateway request and
+network calls; the selected design exposes the already-finalized gateway request and
 per-call result, making Task 7's persistence boundary explicit. The independent comparison
 favored this shape for evidence validation and reporting lineage despite its gateway coupling.
 
@@ -757,8 +757,8 @@ that publication occurred. Guarantees assume a user-controlled local directory a
 filesystem support, to be proved on WSL and native Windows.
 
 Design comparison considered both a case-ledger projection and a semantic document tree.
-The case-ledger base keeps the stronger count model and smaller public surface, with the
-document candidate's direct comparison counts grafted in. Independent adversarial review
+The case-ledger base keeps the stronger count model and smaller public interface, with the
+document candidate's direct comparison counts added. Independent adversarial review
 clarified selected-but-unrun families, check-order mismatches and the existing summary-name
 collision before implementation. Final proof includes both installed wheels, public
 CLI/daemon/HTTPS/SQLite receipt counts, stopped repeated exports without provider calls or
@@ -939,7 +939,7 @@ not automatic permission to delete overlapping local user work.
 - Each task updates its feature entry points when they become runnable. Do not mark future
   command sketches as implemented just because a parser accepts them.
 - Self-review before execution: all shared types/signatures defined, every spec requirement
-  mapped to a task or M3 boundary, each Review Focus mapped to tests, budgets consistent,
+  mapped to a task or M3 boundary, each review focus item mapped to tests, budgets consistent,
   and local change preservation checked. No implementation or automatic commit by this plan.
 
 ## Technical references
@@ -952,6 +952,6 @@ not automatic permission to delete overlapping local user work.
 - [Portalocker](https://portalocker.readthedocs.io/en/latest/): cross-process file locks;
   all participating code must follow the maintenance protocol.
 - [Python SQLite](https://docs.python.org/3.12/library/sqlite3.html): connection/transaction
-  primitives. Domain state and recovery guarantees come from our tests, not library choice.
+  APIs. Domain state and recovery guarantees come from our tests, not library choice.
 - [pip-tools](https://pip-tools.pypa.io/en/stable/): hashed dependency resolution from
   project metadata, generated in each target environment rather than assuming one host's lock is portable.

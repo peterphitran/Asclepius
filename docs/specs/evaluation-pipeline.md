@@ -67,8 +67,7 @@ linked retry with a new run ID, as defined in the backend design. It does not re
 uncertain external requests automatically or claim in-place resume.
 
 Typed field definitions and strict proposal schemas now live in `asclepius.domain` and
-`asclepius.agents`. Optional lineage/assertion fields preserve older JSON reads. Legacy
-judgments without lineage cannot initiate a new report. Raw provider strings are not
+`asclepius.agents`. Variant and judgment lineage and assertion methods are required. Raw provider strings are not
 internal handoff contracts.
 
 `AgentRunner(connection, *, dispatch)` requires a callback receiving the gateway and

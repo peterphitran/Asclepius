@@ -1,4 +1,4 @@
-# Background Daemon
+# Background daemon
 
 Status: manual detached control, readiness, heartbeat, and graceful stop are implemented.
 Scheduling and controlled model execution are verified by [Task 7](../verification/evidence/cli-pipeline.json).

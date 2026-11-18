@@ -97,7 +97,7 @@ The Task 4 rebuilt wheels passed the then-current `scripts/verify_daemon.py`
 outside the source tree. That version drove the real CLI with synthetic credentials,
 submitted to a real ready control daemon, verified queued state, stopped it, and read/cancelled
 while stopped. Task 7 updates the executable driver for current execution behavior.
-Its temporary stores are removed after its owned child exits.
+That version removed its temporary stores after its owned child exited.
 
 One native creator-exit test failed during review and then passed its reruns and ten extra
 probes. That unexplained failure remains recorded. Physical terminal-close, sleep/shutdown,
@@ -121,7 +121,7 @@ retain metadata and produce a typed incomplete evaluator result.
 Fresh environments installed each platform's hashed lock and rebuilt wheel. The
 installed `scripts/verify_groq.py` proof runs outside the checkout and makes two
 HTTPS requests, validates an evaluator reply, and persists both observations through
-real SQLite budgets. Its temporary store and fixture server are removed afterward.
+real SQLite budgets. The script removes its temporary store and fixture server afterward.
 
 The record includes exact full-suite results, source hashes, wheel hashes, review findings
 and regressions. No live key or hosted model was used. At the Task 5 checkpoint, built-in

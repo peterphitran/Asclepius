@@ -1,4 +1,4 @@
-# Target Connections
+# Target connections
 
 Status: partial. Groq chat boundaries and queued CLI execution are implemented and verified
 with deterministic HTTPS providers. Hosted-model acceptance remains unverified.
@@ -63,11 +63,11 @@ HTTPS and real local SQLite budgets. It does not run a CLI evaluation or contact
 - Credentials must resolve in the daemon's environment, which may differ from the CLI's.
   Never persist resolved headers, signed URLs, or credential values in snapshots/logs.
 - A run-bound connection captures credentials once. Changes to the environment require a
-  new connection/run. Only configured credential values are redacted, not synthetic canaries.
+  new connection/run. Redaction covers only configured credential values, not synthetic canaries.
 - Evaluator output is checked against the exact sent schema before typed construction.
   Schema compliance does not prove evidence truth or an independent judge.
 - Provider errors retain validated `retry_after` timing as decimal seconds or an HTTP date.
-  Invalid, duplicate, oversized, or credential-bearing values are discarded. Timing is
+  Asclepius discards invalid, duplicate, oversized, or credential-bearing values. Timing is
   evidence for an explicit retry, never authorization for an automatic request.
 - Prepared request bodies include the evaluator schema. The coordinator must persist them
   before dispatch and retain observations for validation failures; convenience calls alone

@@ -1,4 +1,4 @@
-# Application Profiles
+# Application profiles
 
 Status: profile CRUD and SQLite history preservation are implemented. Supplied-plan
 submission can use the real control daemon, but it does not execute evaluations yet. See

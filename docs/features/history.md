@@ -1,4 +1,4 @@
-# History and Comparisons
+# History and comparisons
 
 Status: paginated history, saved-run inspection, manual restart recovery, and labeled
 comparisons are implemented. [Task 9](../verification/evidence/cli-results.json) verifies
@@ -35,7 +35,7 @@ against per-check records. Include empty history and unknown run IDs.
 - Equal pinned settings do not establish immutable remote revisions or paired generated
   inputs. Comparisons show counts without numerical deltas, causal claims, or a score.
 - Selected but unrun families show zero generated cases; a family absent from the snapshot
-  is not selected. Missing judgments and legacy unknown-kind cases remain separate.
+  is not selected. Missing judgments remain separate.
 - Error counts and denominators affect apparent improvements.
 - Proposed first milestone: no automatic history purge. Explicit deletion/import and
   backup/restore commands need separate designs; do not copy a live SQLite file casually.

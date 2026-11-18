@@ -38,6 +38,10 @@ returns a distinct linked run ID, and the source run remains unchanged.
 - Progress must account for errors and incomplete checks.
 - Internal state-service tests cannot prove a complete user run.
 - A completed run can contain findings; completion does not mean the target passed.
+- A failed target call (for example HTTP 429 or 5xx, a timeout, or an invalid reply) does not
+  stop the run. The case is recorded as `inconclusive` with the error code in its rationale,
+  and no judge call is made. Errors that would repeat on every case stop the run instead:
+  HTTP 401, 403 or 404, a missing local Ollama model, or an invalid credential.
 - Freeze bounded check/variant counts before dispatch and report phase progress; late
   discovery of generated variants must not masquerade as a stable overall percentage.
 - A queued run can lose credentials/capabilities before execution. Revalidate without

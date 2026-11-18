@@ -20,11 +20,10 @@ python -m ruff check asclepius tests/cli
 ```
 
 Use `requirements-cli-windows.lock` on native Windows. Locks were resolved with Python
-3.12 on WSL and Python 3.13 on Windows. They currently include legacy dependencies too.
+3.12 on WSL and Python 3.13 on Windows.
 Do not apply them to an unrelated environment or replace the original checkout's `.venv`.
 Validation checks secret references, not secret values or provider availability. No key
-is needed to validate the examples. Comparison and export commands still
-exit 5 with `not_implemented`. Accepting a command name is not proof of evaluation execution.
+is needed to validate the examples.
 
 To regenerate a lock in its matching platform environment:
 
@@ -79,7 +78,7 @@ explicit caps are respected. These settings do not change trial configuration or
 Incomplete preflights still fail without retry; sanitized evidence retains available response
 identity, finish reason and valid usage counts, including reasoning tokens when reported.
 Reasoning tokens are part of completion usage, not added to it. The approved live limits
-include ten requests per minute and 45 minutes per run. It waits 61 seconds after preflight
+include ten requests per minute and 45 minutes per run. The driver waits 61 seconds after preflight
 to clear the shared account window. Actual requests and tokens are recorded separately
 from reserved completion allowance; uncertain paid requests are never retried automatically.
 
@@ -155,7 +154,7 @@ Comparison returns derived counts directly, alongside source views and a setting
 assessment. Same pinned settings, model-only changes, and incompatible settings have
 separate labels. Check content compatibility and execution check order are distinct.
 Remote revisions and generated input matching remain unestablished. Counts keep attacks,
-controls, delivery errors, missing judgments, and unknown-kind legacy cases separate.
+controls, delivery errors, and missing judgments separate.
 They do not become a combined score or numerical improvement claim.
 
 Reports refuse an existing destination by default. Add `--overwrite` explicitly. The
@@ -241,8 +240,9 @@ Set the target and evaluator environment references before submitting. Their val
 enter snapshots. Submission checks this shell's environment, not the future daemon's
 environment. Execution must resolve references again. Built-in `--pack broad-chat-v1`
 pins the bundled checks and four role prompts through the same service as `--plan`.
-Legacy custom plans still read and queue. The new role runner requires exactly three
-strategies per check; the earlier one-strategy custom example demonstrates submission only.
+Submission rejects a plan that cannot run (`plan_not_executable`, exit 2, no run created):
+each check needs three distinct strategies, evidence criteria, a severity rule, and valid
+deterministic assertions. The custom example in `examples/submission-plan.json` meets this.
 Successful submission acknowledges background acceptance. Inspect `runs show` or `runs watch`
 for the current state and persisted phases/counts. Retry requires a
 failed, cancelled, or interrupted source and an active original profile. It creates a new ID
@@ -321,17 +321,13 @@ belongs under Linux storage such as `/tmp`, not the Windows checkout.
 
 ## Upgrade existing local storage
 
-New stores use SQLite schema version 4. Existing version-1, version-2, and version-3 stores require an explicit,
-stopped upgrade before reads or daemon start:
+New stores use SQLite schema version 4. Stores written by older versions are not upgraded.
+Any other schema version fails with a `schema_version` error, and nothing is modified.
+Delete the old data directory and start a new one.
 
-```text
-asclepius --data-dir <local-directory> storage migrate --json
-```
-
-Migration acquires exclusive instance and maintenance locks. It adds private elapsed samples
-without inventing ticks for historical rows and preserves saved profiles, runs, and observations.
-Unsupported versions fail without reset. `init` never upgrades
-an existing store, and ordinary commands do not migrate implicitly. JSON output envelopes
+`storage migrate` takes the same exclusive instance and maintenance locks and reports
+version 4 for a current store. `init` and ordinary commands never change the schema of an
+existing store. JSON output envelopes
 still use schema version 1; that is separate from the SQLite schema version.
 
 The shared `BudgetManager` has tested global, kind, destination, grouping, origin, and

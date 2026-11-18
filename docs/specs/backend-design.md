@@ -115,10 +115,9 @@ Snapshot configuration before evaluation so editing a profile cannot rewrite an 
 run's meaning. Exact DDL, retention, and artifact-size limits remain implementation work.
 Pin full check definitions and prompt/model configuration, not only mutable file paths.
 
-Initialize a new database transactionally. Apply versioned schema upgrades only while
-the daemon is stopped, under an exclusive maintenance lock. Existing commands reject
-unsupported schema versions instead of modifying a live database silently.
-Repository operations must also respect the maintenance lock so a schema upgrade cannot
+Initialize a new database transactionally under an exclusive maintenance lock. Existing
+commands reject unsupported schema versions instead of modifying a database silently.
+Repository operations must also respect the maintenance lock so initialization cannot
 race with another CLI process opening a write transaction.
 
 ## Daemon ownership and scheduling
@@ -235,7 +234,7 @@ A deterministic gateway fixture is needed for repeatable pipeline verification.
 
 ## Results, comparisons, and export
 
-Persist all judgment outcomes and errors, not just findings. Report planned/completed
+Persist all judgment outcomes and errors, including those that are not findings. Report planned/completed
 work, weaknesses, inconclusive judgments, and execution failures separately.
 
 Comparisons check profile snapshots, check/rubric versions, and evaluation configuration
@@ -281,5 +280,5 @@ paths with controlled failures and repeatable assertions; scripted responses do 
 establish real-model evaluation. Add RAGbot's capability-specific acceptance afterward.
 
 Before coding, resolve exact schema/constraints, locking implementation, check format,
-template/selector syntax, first provider/checks, and numeric limits. No package scaffolding,
-new dependencies, database changes, or runtime removal is performed by this document.
+template/selector syntax, first provider/checks, and numeric limits. This document does not scaffold a package,
+add dependencies, change databases, or remove the runtime.

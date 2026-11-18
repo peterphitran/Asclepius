@@ -16,8 +16,7 @@ verifies joined input/reply/judgment/check context and cursor reads on saved evi
 Choose a run, inspect its findings, and open the evidence for a selected result.
 Use `findings list --run <run-id>` and `findings show <finding-id>`. These reads work
 while the daemon is stopped. Lists have the shared `--limit` and `--cursor` options.
-Detail retains the original Finding fields and adds saved context. Legacy cases with no
-variant payload remain visible with explicit unknown-kind context and saved request data.
+Detail retains the original Finding fields and adds saved context.
 
 ## Driving it with the terminal
 

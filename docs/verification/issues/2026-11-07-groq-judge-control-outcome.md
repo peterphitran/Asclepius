@@ -20,7 +20,7 @@ paid request automatically.
 
 The [preflight correction record](../evidence/cli-groq-preflight-correction.json) retains
 the separate live access proof and subsequent failure summary. Full live-provider,
-semantic, terminal-close and Task10 acceptance remain incomplete. The earlier storage
+semantic, terminal-close and Task 10 acceptance remain incomplete. The earlier storage
 investigation is also still open.
 
 The correction selects fixed case-specific proposal schemas through the existing gateway:

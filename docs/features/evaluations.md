@@ -1,4 +1,4 @@
-# Evaluation Checks
+# Evaluation checks
 
 Status: partial. The built-in pack and four role contracts execute through a persisted
 coordinator. Live model assessment accuracy remains pending.
@@ -23,7 +23,7 @@ pack with `asclepius run <target> --pack broad-chat-v1 --evaluator <evaluator.to
 after starting the daemon and configuring credentials. Submission accepts background work. Inspect persisted phase/count progress and terminal
 results through `runs show` or `runs watch`.
 
-The pack has four objectives in each of five families, instruction priority, protected
+The pack has four objectives in each of five families: instruction priority, protected
 synthetic context, encoded instructions, conflicting context, and application policy.
 The [implementation plan](../plans/2026-10-21-cli-evaluator.md#task-6-broad-pack-and-four-role-contracts)
 lists the 20 stable IDs. Each check pins three attack strategies, a fixed benign control,
@@ -67,7 +67,7 @@ transport, persistence, and result handling in the path.
 - Local canary/schema assertions remain separate from semantic judgments. Quotes must
   occur in the actual reply, ignoring markdown markers (`*`, `_`, `` ` ``, `#`), whitespace
   runs, and typographic variants (Unicode hyphens and dashes, curly quotes); the stored
-  quote is the matching span of the original reply. Reporter cannot change IDs, severity, or evidence and builds
+  quote is the matching span of the original reply. The Reporter cannot change IDs, severity, or evidence. It builds
   reproduction from the recorded request. Control over-refusal is a separate diagnostic.
 - For a complete, unredacted deterministic reply whose assertions are all met, the
   product owns the `pass` verdict. A structurally valid judge disagreement receives a

@@ -1,4 +1,4 @@
-# Feature Map
+# Feature map
 
 Behavior coverage for the project defined in [product scope](../product.md).
 The feature pages describe intended CLI actions and the evidence needed to verify them.

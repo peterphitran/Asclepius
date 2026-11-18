@@ -1,4 +1,4 @@
-# User Journeys
+# User journeys
 
 Status: planned. Verify complete workflows after their constituent features are implemented.
 

@@ -92,8 +92,8 @@ separately from the run's evaluation state: not required, pending, succeeded, fa
 or uncertain. Failed cleanup must remain prominent without overwriting a cancellation,
 failure, or valid evaluation result. A report cannot claim the environment was restored
 unless cleanup was verified.
-Reserve a separate bounded cleanup request/time budget before evaluation begins; using
-the evaluation budget up cannot consume that reserve. Graceful drain includes bounded
+Reserve a separate bounded cleanup request/time budget before evaluation begins, so
+exhausting the evaluation budget cannot consume that reserve. Graceful drain includes bounded
 known-owned cleanup. If cleanup cannot finish before shutdown, save pending/uncertain
 resources and show an actionable warning, rather than claiming restoration or retrying
 unknown operations automatically. Control operations remain responsive during cleanup.
