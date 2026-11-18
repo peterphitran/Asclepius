@@ -22,7 +22,6 @@ try:
 except ImportError:
     from pipeline_fixture import isolated_python
 
-# Must equal asclepius.agents.EMPTY_REPLY_RATIONALE; the fixture does not import the product.
 EMPTY_REPLY_RATIONALE = (
     "Target reply was empty; no evidence to assess, so the judge was not called."
 )
@@ -362,7 +361,9 @@ def verify_trial(view, limits):
         linked = [o for o in view["observations"] if o["work_item_id"] == variant["id"]]
         actors = [o["actor"] for o in linked]
         require(actors.count("target") == 1, "case_observation_links_missing")
-        reply = next(o for o in linked if o["actor"] == "target")["payload"].get("content")
+        observed = next(o for o in linked if o["actor"] == "target")
+        require(observed["status"] == "success", "observation_failed")
+        reply = observed["payload"].get("content")
         require(isinstance(reply, str), "target_reply_missing")
         if reply.strip():
             require(actors.count("judge") == 1, "case_observation_links_missing")

@@ -5,7 +5,6 @@ from uuid import UUID
 from asclepius.adapters.chat import ChatAdapter, DispatchFailure, GroqConnection, PreparedCall
 from asclepius.adapters.ollama import OllamaAdapter
 from asclepius.agents import AgentRunner, check_work_item, selector_work_item
-from asclepius.checks import validate_assertions
 from asclepius.domain import (
     AppError,
     FindingOutput,
@@ -18,7 +17,6 @@ from asclepius.domain import (
     SelectionOutput,
     StageAttempt,
     StageOutput,
-    SubmissionPlan,
     Variant,
 )
 from asclepius.limits import BudgetManager
@@ -34,6 +32,18 @@ _FATAL = frozenset(
         "storage_corrupt",
         "schema_version",
         "storage_missing",
+    }
+)
+
+
+_RUN_STOPPING_TARGET_ERRORS = frozenset(
+    {
+        "local_model_missing",
+        "provider_http_401",
+        "provider_http_403",
+        "provider_http_404",
+        "secret_invalid",
+        "transport_config",
     }
 )
 
@@ -80,8 +90,8 @@ class _RunSession:
             await self.save(error.observation)
             raise
         await self.save(observation)
-        if observation.status != "success":
-            raise AppError(observation.error_code or "target_failure", "Target request failed.")
+        if observation.error_code in _RUN_STOPPING_TARGET_ERRORS:
+            raise AppError(observation.error_code, "Target request failed.")
         return observation
 
 
@@ -170,22 +180,6 @@ class Coordinator:
             await self.repo.phase(
                 str(snapshot.id), "preflight", instance_id=self.budgets.instance_id
             )
-            try:
-                SubmissionPlan(checks=snapshot.checks, prompts=snapshot.prompts)
-                for check in snapshot.checks:
-                    if (
-                        len(check.strategies) != 3
-                        or len(set(check.strategies)) != 3
-                        or not all(strategy.strip() for strategy in check.strategies)
-                        or not check.evidence_criteria
-                        or check.severity_rule is None
-                    ):
-                        raise ValueError
-                    validate_assertions(check)
-            except (ValueError, AppError):
-                raise AppError(
-                    "plan_not_executable", "Saved plan lacks execution contracts."
-                ) from None
             connection = GroqConnection(snapshot, self.budgets, transport=self.transport)
             connection.validate_credentials()
             session = _RunSession(self.repo, self.budgets, connection)

@@ -262,7 +262,7 @@ def proof(root, certificates, artifacts):
     fault_root = root / "partial"
     partial_artifacts = artifacts / "partial"
     partial_artifacts.mkdir()
-    with provider(fault_root / "store", certificates, fault="http") as server:
+    with provider(fault_root / "store", certificates, fault="http_401") as server:
         directory, evaluator, _, _ = configure(fault_root, server, certificates)
         try:
             identity = cli(
@@ -270,7 +270,7 @@ def proof(root, certificates, artifacts):
             )["id"]
             partial_view = wait_run(directory, identity)
             assert partial_view["state"] == "failed"
-            assert partial_view["reason"] == "provider_http_503"
+            assert partial_view["reason"] == "provider_http_401"
             assert len(partial_view["observations"]) == len(server.calls)
         finally:
             assert cli(directory, "daemon", "stop")["owned"] is False

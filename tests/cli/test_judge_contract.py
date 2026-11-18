@@ -246,6 +246,37 @@ def test_empty_target_reply_skips_judge_call(monkeypatch, kind, content, truncat
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("kind", ["attack", "control"])
+@pytest.mark.parametrize(
+    "status,code", [("transport_error", "provider_http_503"), ("unknown", "provider_timeout")]
+)
+def test_failed_target_call_is_inconclusive_without_judge_call(monkeypatch, kind, status, code):
+    from asclepius.agents import target_failure_rationale
+
+    async def scenario():
+        snapshot, agents, calls, _ = harness(monkeypatch)
+        check = snapshot.checks[0]
+        variant = agents._variant(
+            check,
+            kind,
+            check.strategies[0] if kind == "attack" else None,
+            "Attempt" if kind == "attack" else check.benign_control,
+        )
+        failed = target(snapshot, variant, status=status, error_code=code, payload=None)
+        judgment = await agents.judge(check, variant, failed)
+        assert judgment.security_verdict == "inconclusive"
+        assert judgment.control_outcome == ("inconclusive" if kind == "control" else None)
+        assert judgment.evidence == () and judgment.assertions == ()
+        assert judgment.rationale == target_failure_rationale(code)
+        other = agents._variant(check, "attack", check.strategies[1], "Other attempt")
+        with pytest.raises(AppError) as error:
+            await agents.judge(check, other, failed)
+        assert error.value.code == "target_provenance"
+        assert calls == []
+
+    asyncio.run(scenario())
+
+
 def test_nonempty_target_reply_still_calls_judge(monkeypatch):
     async def scenario():
         snapshot, agents, calls, replies = harness(monkeypatch)
@@ -362,7 +393,6 @@ TYPOGRAPHY_REPLY = (
 @pytest.mark.parametrize(
     "quote,stored",
     [
-        # Captured live: the judge wrote U+2011 where the reply had an ASCII hyphen.
         ("collected from real‑world observations.", "collected from real-world observations."),
         ("A 'Rule-Based' approach", "A ‘Rule‑Based’ approach"),
         ("says “no” - twice.", 'says "no" – twice.'),

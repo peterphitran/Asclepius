@@ -55,7 +55,7 @@ def test_provider_closes_evidence_connection(tmp_path, monkeypatch, committed):
             opened[0].execute("SELECT 1")
 
 
-def test_stage_attempt_started_completed_and_legacy_start_unknown(tmp_path):
+def test_stage_attempt_records_start_and_completion(tmp_path):
     async def scenario():
         repo, snapshot, work = await prepare(tmp_path)
         attempt = await repo.begin_stage(str(snapshot.id), work, "selector", instance_id=OWNER)
@@ -92,21 +92,6 @@ def test_pending_stage_blocks_finalization_and_failed_attempt_closes_it(tmp_path
     asyncio.run(scenario())
 
 
-def test_legacy_plan_fails_before_credentials_or_provider(tmp_path):
-    from asclepius.coordinator import Coordinator
-    from asclepius.limits import BudgetManager
-
-    async def scenario():
-        repo, snapshot, _ = await prepare(tmp_path)
-        await Coordinator(repo, BudgetManager(repo, OWNER)).execute(snapshot)
-        view = await repo.read_run(str(snapshot.id))
-        assert view.state == RunState.FAILED
-        assert view.reason == "plan_not_executable"
-        assert view.observations == ()
-
-    asyncio.run(scenario())
-
-
 def test_full_pack_real_cli_daemon_https_and_sqlite(tmp_path):
     from pathlib import Path
 
@@ -136,7 +121,7 @@ def test_full_pack_real_cli_daemon_https_and_sqlite(tmp_path):
 
 @pytest.mark.parametrize(
     "fault,reason,targets,findings",
-    [("http", "provider_http_503", 2, 1), ("invalid", "invalid_role_output", 0, 0)],
+    [("http_401", "provider_http_401", 2, 1), ("invalid", "invalid_role_output", 0, 0)],
 )
 def test_real_provider_failure_retains_evidence_and_stops_dispatch(
     tmp_path, fault, reason, targets, findings
@@ -164,7 +149,7 @@ def test_real_provider_failure_retains_evidence_and_stops_dispatch(
                 assert view["observations"][-1]["status"] == "success"
                 assert view["observations"][-1]["payload"]["content"] == '{"attacks":[]}'
             else:
-                assert view["observations"][-1]["error_code"] == "provider_http_503"
+                assert view["observations"][-1]["error_code"] == "provider_http_401"
             with sqlite3.connect(directory / "asclepius.sqlite3") as connection:
                 assert (
                     connection.execute(
@@ -174,6 +159,40 @@ def test_real_provider_failure_retains_evidence_and_stops_dispatch(
                 )
         finally:
             cli(directory, "daemon", "stop")
+
+
+def test_failed_target_calls_are_recorded_and_the_run_continues(tmp_path):
+    from pathlib import Path
+
+    from asclepius.agents import target_failure_rationale
+    from scripts.pipeline_fixture import cli, configure, provider, wait_run
+
+    certificates = Path(__file__).parent / "fixtures"
+    with provider(tmp_path / "store", certificates, fault="http") as server:
+        directory, evaluator, _, _ = configure(tmp_path, server, certificates)
+        try:
+            accepted = cli(
+                directory, "run", "fixture", "--pack", "broad-chat-v1", "--evaluator", evaluator
+            )
+            view = wait_run(directory, accepted["id"])
+        finally:
+            cli(directory, "daemon", "stop")
+    assert server.failures == []
+    assert view["state"] == "completed" and view["reason"] is None
+    targets = [item for item in view["observations"] if item["actor"] == "target"]
+    failed = {item["work_item_id"] for item in targets if item["status"] != "success"}
+    assert len(targets) == 80 and len(failed) == 20
+    assert all(item["error_code"] == "provider_http_503" for item in targets if item["error_code"])
+    assert len(view["judgments"]) == 80
+    unjudged = [j for j in view["judgments"] if j["variant_id"] in failed]
+    assert len(unjudged) == 20
+    assert all(
+        j["security_verdict"] == "inconclusive"
+        and j["rationale"] == target_failure_rationale("provider_http_503")
+        and not j["evidence"]
+        for j in unjudged
+    )
+    assert sum(call["actor"] == "judge" for call in server.calls) == 60
 
 
 def test_missing_daemon_credential_preflight_ignores_client_credential(tmp_path):
@@ -244,7 +263,7 @@ def test_snapshot_survives_profile_and_local_plan_edits(tmp_path):
             cli(directory, "daemon", "stop")
 
 
-def test_legacy_direct_commit_keeps_unknown_start_timestamp(tmp_path):
+def test_direct_commit_keeps_unknown_start_timestamp(tmp_path):
     async def scenario():
         repo, snapshot, work = await prepare(tmp_path)
         await repo.commit_stage(

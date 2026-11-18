@@ -197,13 +197,13 @@ class Provider(ThreadingHTTPServer):
         assert self.release.wait(20)
         time.sleep(self.delay)
         if (
-            self.fault == "http"
+            self.fault in {"http", "http_401"}
             and actor == "target"
             and variant["kind"] == "attack"
             and variant["strategy"]
             and variant["payload"]["messages"][-1]["content"].endswith("attack-1")
         ):
-            return 503, {"error": "fixture unavailable"}
+            return (401 if self.fault == "http_401" else 503), {"error": "fixture unavailable"}
         content, finish = self.proposal(actor, body, variant)
         if self.fault == "invalid" and actor == "generator":
             content = '{"attacks":[]}'
@@ -342,8 +342,6 @@ def provider(directory, certificate_dir, **options):
 
 
 class _OllamaHandler(BaseHTTPRequestHandler):
-    """Plain-HTTP local target in Ollama's native shape, checked by the hosted fixture."""
-
     def log_message(self, *args):
         pass
 
@@ -377,7 +375,6 @@ class _OllamaHandler(BaseHTTPRequestHandler):
 
 @contextmanager
 def ollama_provider(hosted):
-    """Serve a local Ollama-style target that records calls on the hosted fixture."""
     server = ThreadingHTTPServer(("127.0.0.1", 0), _OllamaHandler)
     server.hosted = hosted
     server.origin = f"http://127.0.0.1:{server.server_port}"
