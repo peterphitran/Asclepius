@@ -15,12 +15,14 @@ from asclepius.domain import (
     AppError,
     ChatInput,
     EvaluatorConfig,
+    GenerationOutput,
     Message,
     Observation,
     OperationRequest,
     ProfileConfig,
     PromptSnapshot,
     TargetConfig,
+    Variant,
 )
 from asclepius.exports import render_report
 from asclepius.limits import BudgetManager
@@ -63,7 +65,7 @@ def reply(content="hello", finish="stop", **message):
     }
 
 
-async def setup(groq, tmp_path, monkeypatch, *, legacy_case=False, **limits):
+async def setup(groq, tmp_path, monkeypatch, *, variant=False, **limits):
     server, transport = groq
     monkeypatch.setenv("TARGET_KEY", "target-secret-123")
     monkeypatch.setenv("EVALUATOR_KEY", "evaluator-secret-456")
@@ -104,13 +106,33 @@ async def setup(groq, tmp_path, monkeypatch, *, legacy_case=False, **limits):
     await repo.enqueue(snapshot)
     await repo.claim_next(OWNER)
     work_id = uuid4()
-    await repo.register_work_item(
-        str(snapshot.id),
-        str(work_id),
-        "test.check",
-        variant_id=str(uuid4()) if legacy_case else None,
-        instance_id=OWNER,
-    )
+    if variant:
+        generator_work = str(uuid4())
+        await repo.register_work_item(
+            str(snapshot.id), generator_work, "test.check", instance_id=OWNER
+        )
+        await repo.commit_stage(
+            str(snapshot.id),
+            generator_work,
+            "generator",
+            GenerationOutput(
+                variants=(
+                    Variant(
+                        id=work_id,
+                        check_id="test.check",
+                        check_version="1",
+                        kind="attack",
+                        strategy="override",
+                        payload=ChatInput(messages=(Message(role="user", content="hello"),)),
+                    ),
+                )
+            ),
+            instance_id=OWNER,
+        )
+    else:
+        await repo.register_work_item(
+            str(snapshot.id), str(work_id), "test.check", instance_id=OWNER
+        )
     budgets = BudgetManager(repo, OWNER, limits=profile.limits)
     connection = GroqConnection(snapshot, budgets, transport=transport)
     adapter = ChatAdapter(connection)
@@ -1060,7 +1082,7 @@ def test_https_reported_models_redact_both_credentials_before_storage_and_export
     groq, tmp_path, monkeypatch, encoded
 ):
     async def scenario():
-        repo, snapshot, work, _, _ = await setup(groq, tmp_path, monkeypatch, legacy_case=True)
+        repo, snapshot, work, _, _ = await setup(groq, tmp_path, monkeypatch, variant=True)
         secrets = ('target-"credential-\\value', 'evaluator-"credential-\\value')
         monkeypatch.setenv("TARGET_KEY", secrets[0])
         monkeypatch.setenv("EVALUATOR_KEY", secrets[1])

@@ -6,7 +6,7 @@ from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, get_args
 from uuid import UUID, uuid4
 
 import portalocker
@@ -22,7 +22,6 @@ from asclepius.domain import (
     GenerationOutput,
     Judgment,
     JudgmentOutput,
-    LegacyCaseIdentity,
     Limits,
     Observation,
     OperationIntent,
@@ -42,7 +41,7 @@ from asclepius.domain import (
     allowed_transition,
     tighter,
 )
-from asclepius.elapsed_clock import Tick, elapsed_clock
+from asclepius.elapsed_clock import ClockSource, Tick, elapsed_clock
 from asclepius.maintenance import (
     SCHEMA_VERSION,
     initialize_storage,
@@ -182,11 +181,7 @@ class Repository:
         source, ns = row[f"{prefix}_clock"], row[f"{prefix}_tick_ns"]
         if source is None and ns is None:
             return None
-        if (
-            source not in {"linux-boottime-v1", "windows-gettickcount64-v1"}
-            or type(ns) is not int
-            or not 0 <= ns <= 2**63 - 1
-        ):
+        if source not in get_args(ClockSource) or type(ns) is not int or not 0 <= ns <= 2**63 - 1:
             raise AppError("storage_corrupt", "Invalid stored elapsed clock sample.")
         return Tick(source, ns)
 
@@ -586,7 +581,6 @@ class Repository:
         run_id: str,
         work_item_id: str,
         check_id: str,
-        variant_id: str | None = None,
         *,
         instance_id: str,
     ) -> None:
@@ -599,12 +593,12 @@ class Repository:
                 "SELECT * FROM work_items WHERE run_id=? AND id=?", (run_id, work_item_id)
             ).fetchone()
             if existing:
-                if existing["check_id"] != check_id or existing["variant_id"] != variant_id:
+                if existing["check_id"] != check_id or existing["variant_id"] is not None:
                     raise AppError("conflict", "Work item identity has different content.")
                 return
             connection.execute(
-                "INSERT INTO work_items(run_id,id,check_id,variant_id) VALUES(?,?,?,?)",
-                (run_id, work_item_id, check_id, variant_id),
+                "INSERT INTO work_items(run_id,id,check_id) VALUES(?,?,?)",
+                (run_id, work_item_id, check_id),
             )
 
         await self._run(action, write=True)
@@ -941,24 +935,6 @@ class Repository:
                 )
             )
 
-        legacy_cases = tuple(
-            LegacyCaseIdentity(
-                work_item_id=item["id"],
-                variant_id=item["variant_id"],
-                check_id=item["check_id"],
-                request=OperationRequest.model_validate_json(item["request_json"])
-                if item["request_json"] is not None
-                else None,
-            )
-            for item in connection.execute(
-                "SELECT w.id,w.variant_id,w.check_id,o.request_json FROM work_items w "
-                "LEFT JOIN operations o ON o.run_id=w.run_id AND o.work_item_id=w.id "
-                "AND COALESCE(json_extract(o.request_json,'$.actor'),'target')='target' "
-                "WHERE w.run_id=? AND w.variant_id IS NOT NULL AND w.variant_json IS NULL "
-                "ORDER BY w.rowid",
-                (row["id"],),
-            )
-        )
         snapshot = RunSnapshot.model_validate_json(row["snapshot_json"])
         variants = tuple(
             Variant.model_validate_json(item[0])
@@ -987,7 +963,6 @@ class Repository:
         )
         return RunView(
             snapshot=snapshot,
-            legacy_cases=legacy_cases,
             attempts=attempts,
             variants=variants,
             progress=RunProgress(

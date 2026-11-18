@@ -14,8 +14,6 @@ from asclepius.domain import (
     Finding,
     FindingDetail,
     Judgment,
-    LegacyCaseCounts,
-    LegacyCaseIdentity,
     Observation,
     RunResults,
     RunView,
@@ -27,19 +25,10 @@ from asclepius.storage import Repository
 
 @dataclass(frozen=True)
 class _Case:
-    variant: Variant | None
+    variant: Variant
     observation: Observation | None
     judgment: Judgment | None
     finding: Finding | None
-    legacy: LegacyCaseIdentity | None = None
-
-    @property
-    def check_id(self) -> str:
-        return self.variant.check_id if self.variant else self.legacy.check_id
-
-    @property
-    def kind(self) -> str:
-        return self.variant.kind if self.variant else "unknown"
 
 
 def _unique(items, key):
@@ -56,8 +45,6 @@ def _cases(view: RunView) -> tuple[_Case, ...]:
     checks = _unique(view.snapshot.checks, lambda item: item.id)
     _unique(view.snapshot.prompts, lambda item: item.role)
     variants = _unique(view.variants, lambda item: item.id)
-    legacy = _unique(view.legacy_cases, lambda item: item.variant_id)
-    work = _unique(view.legacy_cases, lambda item: item.work_item_id)
     observations = _unique(view.observations, lambda item: item.id)
     _unique(view.observations, lambda item: item.operation_id)
     targets = _unique(
@@ -73,34 +60,23 @@ def _cases(view: RunView) -> tuple[_Case, ...]:
         if not condition:
             raise AppError("results_corrupt", "Impossible lineage in saved run evidence.")
 
-    require(not (variants.keys() & legacy.keys()) and not (variants.keys() & work.keys()))
     for observation in view.observations:
         require(observation.run_id == view.snapshot.id)
     for identity in targets:
-        require(identity in variants or identity in work)
+        require(identity in variants)
     for identity in judgments.keys() | findings.keys():
-        require(identity in variants or identity in legacy)
+        require(identity in variants)
     cases = []
-    for identity in (*variants, *legacy):
-        variant = variants.get(identity)
-        historical = legacy.get(identity)
-        check_id = variant.check_id if variant else historical.check_id
-        work_id = identity if variant else historical.work_item_id
-        require(check_id in checks)
-        check = checks[check_id]
-        if variant:
-            require(variant.check_version is None or variant.check_version == check.version)
+    for identity, variant in variants.items():
+        require(variant.check_id in checks)
+        check = checks[variant.check_id]
+        require(variant.check_version == check.version)
         judgment = judgments.get(identity)
-        observation = targets.get(work_id)
-        if historical and historical.request:
-            request = historical.request
-            require(request.run_id == view.snapshot.id and request.work_item_id == work_id)
-            require(request.actor == "target")
-            require(observation is None or observation.operation_id == request.id)
+        observation = targets.get(identity)
         if judgment is not None:
             require(observation is not None)
-            require(judgment.check_id is None or judgment.check_id == check.id)
-            require(judgment.check_version is None or judgment.check_version == check.version)
+            require(judgment.check_id == check.id)
+            require(judgment.check_version == check.version)
             require(judgment.rubric_version == check.version)
             for ref in judgment.evidence:
                 require(ref.observation_id in observations)
@@ -111,12 +87,12 @@ def _cases(view: RunView) -> tuple[_Case, ...]:
             require(finding.judgment_id == judgment.id)
             for ref in finding.evidence:
                 require(observation is not None and ref.observation_id == observation.id)
-        cases.append(_Case(variant, observation, judgment, finding, historical))
+        cases.append(_Case(variant, observation, judgment, finding))
     return tuple(cases)
 
 
 def _counts(cases: tuple[_Case, ...], kind: str) -> AttackCounts | ControlCounts:
-    selected = tuple(case for case in cases if case.kind == kind)
+    selected = tuple(case for case in cases if case.variant.kind == kind)
     delivery = Counter(
         case.observation.status if case.observation else "unobserved" for case in selected
     )
@@ -190,30 +166,16 @@ def summarize_run(view: RunView) -> RunResults:
     families = []
     for family in dict.fromkeys(check.family for check in view.snapshot.checks):
         checks = {check.id for check in view.snapshot.checks if check.family == family}
-        family_cases = tuple(
-            case for case in cases if case.check_id in checks and case.variant is not None
-        )
+        family_cases = tuple(case for case in cases if case.variant.check_id in checks)
         families.append(
             FamilyResults(
                 family=family,
                 requested_checks=len(checks),
-                generated_checks=len({case.check_id for case in family_cases}),
+                generated_checks=len({case.variant.check_id for case in family_cases}),
                 attacks=_counts(family_cases, "attack"),
                 controls=_counts(family_cases, "control"),
             )
         )
-    legacy = tuple(case for case in cases if case.legacy is not None)
-    legacy_counts = LegacyCaseCounts(
-        cases=len(legacy),
-        judgments=sum(case.judgment is not None for case in legacy),
-        findings=sum(case.finding is not None for case in legacy),
-        missing_judgment=sum(case.judgment is None for case in legacy),
-        delivery=DeliveryCounts(
-            **Counter(
-                case.observation.status if case.observation else "unobserved" for case in legacy
-            )
-        ),
-    )
     evaluators = tuple(item for item in view.observations if item.actor != "target")
     actors = []
     for actor in dict.fromkeys(item.actor for item in evaluators):
@@ -236,7 +198,6 @@ def summarize_run(view: RunView) -> RunResults:
         requested_checks=len(view.snapshot.checks),
         generated_checks=sum(family.generated_checks for family in families),
         families=tuple(families),
-        legacy_unclassified=legacy_counts,
         attacks=_total([f.attacks for f in families], AttackCounts),
         controls=_total([f.controls for f in families], ControlCounts),
         target_usage=_usage(tuple(item for item in view.observations if item.actor == "target")),
@@ -306,13 +267,10 @@ def finding_detail(view: RunView, finding_id: UUID) -> FindingDetail:
         snapshot=view.snapshot,
         state=view.state,
         variant=case.variant,
-        legacy_case=case.legacy,
         observation=case.observation,
         judgment=case.judgment,
-        check=next(check for check in view.snapshot.checks if check.id == case.check_id),
+        check=next(check for check in view.snapshot.checks if check.id == case.variant.check_id),
         stage_attempts=tuple(
-            item
-            for item in view.attempts
-            if item.work_item_id == (case.variant.id if case.variant else case.legacy.work_item_id)
+            item for item in view.attempts if item.work_item_id == case.variant.id
         ),
     )

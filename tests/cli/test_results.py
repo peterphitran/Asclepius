@@ -63,6 +63,7 @@ def evidence_view():
     variants = tuple(
         Variant(
             check_id="test.check",
+            check_version="1",
             kind="control" if index >= 6 else "attack",
             payload=ChatInput(messages=(Message(role="user", content=f"case {index}"),)),
         )
@@ -100,6 +101,8 @@ def evidence_view():
         judgments.append(
             Judgment(
                 variant_id=variants[index].id,
+                check_id="test.check",
+                check_version="1",
                 rubric_version="1",
                 security_verdict=("weakness", "pass", "inconclusive")[index % 3],
                 control_outcome=("answered", "over_refusal", None)[index % 3]
@@ -185,18 +188,12 @@ def test_delivery_judgments_controls_and_unknown_usage_are_independent():
     assert summary.stage_attempts[0].error_code == "provider_http_503"
 
 
-def test_legacy_optional_fields_and_missing_reporter_remain_valid():
-    view = evidence_view()
-    summary = summarize_run(view)
+def test_summary_without_reporter_finding_or_capture_time():
+    summary = summarize_run(evidence_view())
     assert summary.attacks.weakness == 1
     assert summary.attacks.findings == 0
     assert summary.captured_at is None
     assert summary.planned_cases is None
-    legacy = view.model_copy(
-        update={"judgments": (view.judgments[0].model_copy(update={"security_verdict": None}),)}
-    )
-    assert summarize_run(legacy).attacks.verdict_unknown == 1
-    assert summarize_run(legacy).attacks.missing_judgment == 5
 
 
 @pytest.mark.parametrize(
@@ -438,6 +435,8 @@ def test_coherent_finding_detail_and_uuid_cursor_pages(tmp_path):
             evidence = (EvidenceRef(observation_id=observation.id, quote="synthetic reply"),)
             judgment = Judgment(
                 variant_id=request.work_item_id,
+                check_id="test.check",
+                check_version="1",
                 rubric_version="1",
                 security_verdict="weakness",
                 evidence=evidence,
@@ -484,23 +483,16 @@ def test_coherent_finding_detail_and_uuid_cursor_pages(tmp_path):
     assert result.returncode == 0, result.stdout
     detail = json.loads(result.stdout)["data"]
     assert detail["description"] == "finding 0"
-    assert detail["variant"] is None
-    assert detail["legacy_case"]["variant_id"] == str(finding.variant_id)
-    assert detail["legacy_case"]["request"]["payload"]["messages"][0]["content"] == "hello"
+    assert detail["variant"]["id"] == str(finding.variant_id)
+    assert detail["variant"]["payload"]["messages"][0]["content"] == "hello"
     source = run(Repository(tmp_path).read_run(str(finding.run_id)))
     assert source.captured_at is None
     assert run(Repository(tmp_path).read_run(str(finding.run_id))) == source
     summary = summarize_run(source)
-    assert summary.attacks.generated == summary.controls.generated == 0
-    assert summary.legacy_unclassified.model_dump() == {
-        "cases": 3,
-        "kind": "unknown",
-        "judgments": 3,
-        "findings": 3,
-        "missing_judgment": 0,
-        "delivery": {"success": 3, "transport_error": 0, "unknown": 0, "unobserved": 0},
-    }
-    destination = tmp_path / "legacy.json"
+    assert summary.attacks.generated == 3
+    assert summary.attacks.weakness == summary.attacks.findings == 3
+    assert summary.controls.generated == 0
+    destination = tmp_path / "saved.json"
     report = run_cli(
         "--data-dir",
         str(tmp_path),
@@ -514,8 +506,8 @@ def test_coherent_finding_detail_and_uuid_cursor_pages(tmp_path):
     )
     assert report.returncode == 0, report.stdout
     document = json.loads(destination.read_text(encoding="utf-8"))
-    assert document["summaries"][0]["legacy_unclassified"]["findings"] == 3
-    assert len(document["runs"][0]["legacy_cases"]) == 3
+    assert document["summaries"][0]["attacks"]["findings"] == 3
+    assert len(document["runs"][0]["variants"]) == 3
     with pytest.raises(AppError) as error:
-        summarize_run(source.model_copy(update={"legacy_cases": source.legacy_cases[1:]}))
+        summarize_run(source.model_copy(update={"variants": source.variants[1:]}))
     assert error.value.code == "results_corrupt"

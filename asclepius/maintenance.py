@@ -72,10 +72,7 @@ def _change_schema(data_dir: Path, *, initialize: bool, timeout: float) -> int:
                     "SELECT name FROM sqlite_master WHERE type='table'"
                 ).fetchall()
                 if version != 0 or tables:
-                    raise AppError(
-                        "schema_version",
-                        "Unsupported storage schema. Use storage migrate for supported upgrades.",
-                    )
+                    raise AppError("schema_version", "Unsupported storage schema version.")
                 connection.execute("PRAGMA journal_mode=WAL")
                 sql = "\n".join(
                     _script(name)
@@ -85,21 +82,6 @@ def _change_schema(data_dir: Path, *, initialize: bool, timeout: float) -> int:
                         "003_execution.sql",
                         "004_elapsed.sql",
                     )
-                )
-            elif version in {1, 2, 3}:
-                connection.execute("PRAGMA journal_mode=WAL")
-                sql = "\n".join(
-                    _script(name)
-                    for number, name in enumerate(
-                        (
-                            "001_initial.sql",
-                            "002_daemon_pid.sql",
-                            "003_execution.sql",
-                            "004_elapsed.sql",
-                        ),
-                        start=1,
-                    )
-                    if number > version
                 )
             else:
                 raise AppError("schema_version", "Unsupported storage schema version.")

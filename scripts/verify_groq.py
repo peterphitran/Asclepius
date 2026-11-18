@@ -140,9 +140,7 @@ async def prove(data_dir, server, transport):
         await repo.enqueue(snapshot)
         await repo.claim_next(owner)
         work = uuid4()
-        await repo.register_work_item(
-            str(snapshot.id), str(work), "proof", variant_id=str(uuid4()), instance_id=owner
-        )
+        await repo.register_work_item(str(snapshot.id), str(work), "proof", instance_id=owner)
         connection = GroqConnection(snapshot, BudgetManager(repo, owner), transport=transport)
         target = ChatAdapter(connection)
         call = target.prepare(

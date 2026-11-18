@@ -118,7 +118,6 @@ def allowed_transition(current: RunState, next_state: RunState) -> RunState:
 
 
 def tighter(first: int | None, second: int | None) -> int | None:
-    """Return the stricter of two optional caps, where None means no cap."""
     if first is None or second is None:
         return second if first is None else first
     return min(first, second)
@@ -178,7 +177,6 @@ class RoleConfig(Contract):
     secret_ref: SecretRef
     temperature: Annotated[float, Field(ge=0, le=2)] = 0
     max_completion_tokens: PositiveInt = 2048
-    # Sent to Groq as-is when set; gpt-oss spends much of its output on hidden reasoning.
     reasoning_effort: Literal["low", "medium", "high"] | None = None
 
     @model_validator(mode="after")
@@ -255,7 +253,7 @@ class ChatOutput(Contract):
 
 
 class Variant(Contract):
-    check_version: Identity | None = None
+    check_version: Identity
     strategy: str | None = None
     id: UUID = Field(default_factory=uuid4)
     check_id: Identity
@@ -318,7 +316,7 @@ class EvidenceRef(Contract):
 
 
 class AssertionResult(Contract):
-    method: Literal["semantic", "deterministic"] | None = None
+    method: Literal["semantic", "deterministic"]
     name: Identity
     outcome: Literal["met", "not_met", "inconclusive"]
     rationale: str
@@ -331,13 +329,13 @@ class Metric(Contract):
 
 
 class Judgment(Contract):
-    check_id: Identity | None = None
-    check_version: Identity | None = None
+    check_id: Identity
+    check_version: Identity
     control_outcome: Literal["answered", "over_refusal", "inconclusive"] | None = None
     id: UUID = Field(default_factory=uuid4)
     variant_id: UUID
     rubric_version: Identity
-    security_verdict: Literal["weakness", "pass", "inconclusive"] | None = None
+    security_verdict: Literal["weakness", "pass", "inconclusive"]
     assertions: tuple[AssertionResult, ...] = ()
     metrics: tuple[Metric, ...] = ()
     evidence: tuple[EvidenceRef, ...] = ()
@@ -484,16 +482,8 @@ class RunProgress(Contract):
     generation_complete: bool = False
 
 
-class LegacyCaseIdentity(Contract):
-    work_item_id: UUID
-    variant_id: UUID
-    check_id: Identity
-    request: OperationRequest | None = None
-
-
 class RunView(Contract):
     captured_at: UtcTime | None = None
-    legacy_cases: tuple[LegacyCaseIdentity, ...] = ()
     snapshot: RunSnapshot
     state: RunState
     cancel_requested: bool = False
@@ -565,15 +555,6 @@ class ActorResults(Contract):
     usage: UsageCoverage
 
 
-class LegacyCaseCounts(Contract):
-    cases: NonNegativeInt
-    kind: Literal["unknown"] = "unknown"
-    judgments: NonNegativeInt
-    findings: NonNegativeInt
-    missing_judgment: NonNegativeInt
-    delivery: DeliveryCounts
-
-
 class RunResults(Contract):
     run_id: UUID
     captured_at: UtcTime | None
@@ -583,7 +564,6 @@ class RunResults(Contract):
     generated_checks: NonNegativeInt
     planned_cases: None = None
     families: tuple[FamilyResults, ...]
-    legacy_unclassified: LegacyCaseCounts
     attacks: AttackCounts
     controls: ControlCounts
     target_usage: UsageCoverage
@@ -630,7 +610,6 @@ class FindingDetail(Finding):
     snapshot: RunSnapshot
     state: RunState
     variant: Variant | None
-    legacy_case: LegacyCaseIdentity | None = None
     observation: Observation
     judgment: Judgment
     check: CheckDefinition

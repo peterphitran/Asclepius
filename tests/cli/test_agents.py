@@ -32,7 +32,6 @@ def harness(monkeypatch):
         try:
             output, code = prepared.output_type.model_validate(json.loads(raw)), None
         except ValidationError:
-            # Mirror the gateway: schema-invalid output is an error result, not an exception.
             output, code = None, "evaluator_invalid_output"
         req = prepared.call.request
         now = datetime.now(UTC)
@@ -419,9 +418,7 @@ def test_deterministic_check_without_assertions_rejected_before_judge_dispatch(m
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize(
-    "change", ["check", "version", "quote", "observation", "legacy", "assertions"]
-)
+@pytest.mark.parametrize("change", ["check", "version", "quote", "observation", "assertions"])
 def test_reporter_revalidates_before_dispatch(monkeypatch, change):
     from asclepius.domain import EvidenceRef
 
@@ -439,7 +436,6 @@ def test_reporter_revalidates_before_dispatch(monkeypatch, change):
             "observation": {
                 "evidence": (EvidenceRef(observation_id=uuid4(), quote="ASCL_PRIORITY_BREACH"),)
             },
-            "legacy": {"check_id": None, "check_version": None},
             "assertions": {"assertions": ()},
         }
         with pytest.raises(AppError):
@@ -466,7 +462,6 @@ def test_hostile_target_text_and_profile_system(monkeypatch):
             GroqConnection(snapshot, SimpleNamespace(limits=profile.limits)),
             dispatch=agents.dispatch,
         )
-        # A semantic finding still goes through the model reporter.
         c = next(c for c in snapshot.checks if c.id == "context.paraphrase")
         v = (await generated(agents, replies, c))[0]
         leak = "It refers to an orchid and 472."
@@ -669,20 +664,12 @@ def test_old_json_snapshot_and_stage_repeat_without_rewrite(tmp_path):
             )
         v = Variant(
             check_id="test.check",
+            check_version="1",
             kind="attack",
             payload=ChatInput(messages=(Message(role="user", content="test"),)),
         )
         output = GenerationOutput(variants=(v,))
         await repo.commit_stage(str(snapshot.id), work, "generator", output, instance_id=OWNER)
-        legacy = output.model_dump(mode="json")
-        for variant in legacy["variants"]:
-            variant.pop("check_version")
-            variant.pop("strategy")
-        legacy_raw = json.dumps(legacy)
-        with sqlite3.connect(repo.database_path) as db:
-            db.execute(
-                "UPDATE stages SET output_json=? WHERE run_id=?", (legacy_raw, str(snapshot.id))
-            )
         assert (
             await repo.commit_stage(str(snapshot.id), work, "generator", output, instance_id=OWNER)
             == output
@@ -697,51 +684,6 @@ def test_old_json_snapshot_and_stage_repeat_without_rewrite(tmp_path):
             )
         with sqlite3.connect(repo.database_path) as db:
             assert db.execute("SELECT snapshot_json FROM runs").fetchone()[0] == raw
-            assert db.execute("SELECT output_json FROM stages").fetchone()[0] == legacy_raw
-
-    asyncio.run(scenario())
-
-
-def test_old_judgment_json_replays_with_defaulted_lineage_and_method(tmp_path):
-    import sqlite3
-
-    from asclepius.domain import AssertionResult, Judgment, JudgmentOutput
-    from tests.cli.storage_fixtures import OWNER, prepare
-    from tests.cli.test_storage import observed_variant
-
-    async def scenario():
-        repo, snapshot, _ = await prepare(tmp_path)
-        request, _ = await observed_variant(repo, snapshot)
-        judgment = Judgment(
-            variant_id=request.work_item_id,
-            rubric_version="1",
-            security_verdict="pass",
-            rationale="Safe reply",
-            assertions=(AssertionResult(name="contract", outcome="met", rationale="Safe reply"),),
-        )
-        output = JudgmentOutput(judgment=judgment)
-        await repo.commit_stage(
-            str(snapshot.id), str(request.work_item_id), "judge", output, instance_id=OWNER
-        )
-        legacy = output.model_dump(mode="json")
-        for key in ("check_id", "check_version", "control_outcome"):
-            legacy["judgment"].pop(key)
-        legacy["judgment"]["assertions"][0].pop("method")
-        raw = json.dumps(legacy)
-        with sqlite3.connect(repo.database_path) as db:
-            db.execute("UPDATE stages SET output_json=? WHERE stage='judge'", (raw,))
-        assert (
-            await repo.commit_stage(
-                str(snapshot.id), str(request.work_item_id), "judge", output, instance_id=OWNER
-            )
-            == output
-        )
-        with sqlite3.connect(repo.database_path) as db:
-            assert (
-                db.execute("SELECT output_json FROM stages WHERE stage='judge'").fetchone()[0]
-                == raw
-            )
-        assert (await repo.read_run(str(snapshot.id))).judgments == (judgment,)
 
     asyncio.run(scenario())
 

@@ -309,77 +309,13 @@ def test_daemon_renews_heartbeat_before_claim_after_pause(tmp_path, monkeypatch)
     asyncio.run(scenario())
 
 
-def test_explicit_v3_upgrade_preserves_history_and_null_elapsed_samples(tmp_path):
-    from importlib.resources import files
-
-    from asclepius.domain import AppError
-    from asclepius.maintenance import migrate_storage
-
-    repo = Repository(tmp_path)
-    tmp_path.mkdir(exist_ok=True)
-    profile_id = str(uuid4())
-    profile = ProfileConfig(target=TargetConfig(name="old", model="x", secret_ref="env:KEY"))
-    snapshot = make_snapshot(profile_id, profile)
-    with sqlite3.connect(repo.database_path) as connection:
-        connection.executescript(
-            "\n".join(
-                files("asclepius").joinpath("migrations", name).read_text()
-                for name in ("001_initial.sql", "002_daemon_pid.sql", "003_execution.sql")
-            )
-        )
-        connection.execute("PRAGMA user_version=3")
-        connection.execute(
-            "INSERT INTO profiles(id,name,config_json,revision) VALUES(?,?,?,1)",
-            (profile_id, "old", profile.model_dump_json()),
-        )
-        connection.execute(
-            "INSERT INTO runs(id,profile_id,snapshot_json,state,created_at) "
-            "VALUES(?,?,?,'completed',?)",
-            (
-                str(snapshot.id),
-                profile_id,
-                snapshot.model_dump_json(),
-                snapshot.created_at.isoformat(),
-            ),
-        )
-        connection.execute(
-            "INSERT INTO events(run_id,kind,data_json,created_at) "
-            "VALUES(?,'old','{}','2020-01-01T00:00:00+00:00')",
-            (str(snapshot.id),),
-        )
-        connection.commit()
-    with pytest.raises(AppError) as error:
-        asyncio.run(repo.control())
-    assert error.value.code == "schema_version"
-    assert migrate_storage(tmp_path) == 4
-    with sqlite3.connect(repo.database_path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
-        assert connection.execute(
-            "SELECT heartbeat_clock,heartbeat_tick_ns FROM daemon_control"
-        ).fetchone() == (None, None)
-        assert connection.execute("SELECT kind,created_at FROM events").fetchall() == [
-            ("old", "2020-01-01T00:00:00+00:00")
-        ]
-    assert asyncio.run(repo.read_run(str(snapshot.id))).snapshot == snapshot
-
-
-def test_failed_004_rolls_back_columns_and_version(tmp_path, monkeypatch):
+def test_failed_004_rolls_back_initialization(tmp_path, monkeypatch):
     from importlib.resources import files
 
     from asclepius import maintenance
     from asclepius.domain import AppError
 
     repo = Repository(tmp_path)
-    tmp_path.mkdir(exist_ok=True)
-    with sqlite3.connect(repo.database_path) as connection:
-        connection.executescript(
-            "\n".join(
-                files("asclepius").joinpath("migrations", name).read_text()
-                for name in ("001_initial.sql", "002_daemon_pid.sql", "003_execution.sql")
-            )
-        )
-        connection.execute("PRAGMA user_version=3")
-        connection.commit()
     monkeypatch.setattr(
         maintenance,
         "_script",
@@ -390,13 +326,13 @@ def test_failed_004_rolls_back_columns_and_version(tmp_path, monkeypatch):
         ),
     )
     with pytest.raises(AppError) as error:
-        maintenance.migrate_storage(tmp_path)
+        maintenance.initialize_storage(tmp_path)
     assert error.value.code == "storage_error"
     with sqlite3.connect(repo.database_path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
-        assert "heartbeat_clock" not in {
-            row[1] for row in connection.execute("PRAGMA table_info(daemon_control)")
-        }
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 0
+        assert (
+            connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall() == []
+        )
 
 
 def test_elapsed_sample_occurs_after_write_transaction_acquisition(tmp_path, monkeypatch):

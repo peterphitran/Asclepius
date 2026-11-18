@@ -202,12 +202,21 @@ def test_stage_and_event_rollback_together(tmp_path):
 
 
 async def observed_variant(repo, snapshot):
-    variant_id = uuid4()
-    await repo.register_work_item(
+    variant = Variant(
+        check_id="test.check",
+        check_version="1",
+        kind="attack",
+        strategy="override",
+        payload=ChatInput(messages=(Message(role="user", content="hello"),)),
+    )
+    variant_id = variant.id
+    generator_work = str(uuid4())
+    await repo.register_work_item(str(snapshot.id), generator_work, "test.check", instance_id=OWNER)
+    await repo.commit_stage(
         str(snapshot.id),
-        str(variant_id),
-        "test.check",
-        variant_id=str(variant_id),
+        generator_work,
+        "generator",
+        GenerationOutput(variants=(variant,)),
         instance_id=OWNER,
     )
     request = OperationRequest(
@@ -238,6 +247,8 @@ def test_judgment_finding_and_repeated_writes_preserve_provenance(tmp_path):
         evidence = (EvidenceRef(observation_id=observation.id, quote="synthetic reply"),)
         judgment = Judgment(
             variant_id=request.work_item_id,
+            check_id="test.check",
+            check_version="1",
             rubric_version="1",
             security_verdict="weakness",
             evidence=evidence,
@@ -288,6 +299,8 @@ def test_fabricated_evidence_is_rejected(tmp_path):
         ):
             judgment = Judgment(
                 variant_id=request.work_item_id,
+                check_id="test.check",
+                check_version="1",
                 rubric_version="1",
                 security_verdict="weakness",
                 evidence=(reference,),
@@ -315,6 +328,8 @@ def test_existing_foreign_variant_or_run_evidence_is_rejected(tmp_path, other_ru
         _, foreign = await observed_variant(repo, other_snapshot)
         judgment = Judgment(
             variant_id=request.work_item_id,
+            check_id="test.check",
+            check_version="1",
             rubric_version="1",
             security_verdict="weakness",
             rationale="wrong provenance",
@@ -341,6 +356,7 @@ def test_generator_materialization_is_atomic_and_idempotent(tmp_path):
         repo, snapshot, work_id = await prepare(tmp_path)
         variant = Variant(
             check_id="test.check",
+            check_version="1",
             kind="attack",
             payload=ChatInput(messages=(Message(role="user", content="test input"),)),
         )

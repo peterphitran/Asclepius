@@ -1,7 +1,6 @@
 import asyncio
 import sqlite3
 import threading
-import time
 from contextlib import closing
 from importlib.resources import files
 
@@ -14,52 +13,23 @@ from asclepius.storage import Repository
 from tests.cli.storage_fixtures import run
 
 
-def test_explicit_v1_migration_preserves_existing_records(tmp_path):
-    from uuid import uuid4
-
-    from asclepius.domain import ProfileConfig, TargetConfig
-    from tests.cli.storage_fixtures import make_snapshot
-
+def test_old_schema_versions_are_rejected_without_upgrade(tmp_path):
     repo = Repository(tmp_path)
-    profile_id = str(uuid4())
-    profile = ProfileConfig(
-        target=TargetConfig(name="kept", model="version-one-target", secret_ref="env:KEY")
-    )
-    snapshot = make_snapshot(profile_id, profile)
     with closing(sqlite3.connect(repo.database_path)) as connection:
         connection.executescript(
             files("asclepius").joinpath("migrations/001_initial.sql").read_text()
         )
-        connection.execute(
-            "INSERT INTO profiles VALUES(?,?,?,1,NULL)",
-            (profile_id, "kept", profile.model_dump_json()),
-        )
-        connection.execute(
-            "INSERT INTO runs(id,profile_id,snapshot_json,state,created_at) "
-            "VALUES(?,?,?,'queued',?)",
-            (
-                str(snapshot.id),
-                profile_id,
-                snapshot.model_dump_json(),
-                snapshot.created_at.isoformat(),
-            ),
-        )
         connection.execute("PRAGMA user_version=1")
         connection.commit()
+    for action in (lambda: run(repo.list_runs()), lambda: run(repo.initialize())):
+        with pytest.raises(AppError) as error:
+            action()
+        assert error.value.code == "schema_version"
     with pytest.raises(AppError) as error:
-        run(repo.list_runs())
+        migrate_storage(tmp_path)
     assert error.value.code == "schema_version"
-    with pytest.raises(AppError) as error:
-        run(repo.initialize())
-    assert error.value.code == "schema_version"
-    assert migrate_storage(tmp_path) == 4
-    assert migrate_storage(tmp_path) == 4
     with closing(sqlite3.connect(repo.database_path)) as connection:
-        assert connection.execute("SELECT id FROM profiles").fetchall() == [(profile_id,)]
-        assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-        assert "pid" in {row[1] for row in connection.execute("PRAGMA table_info(daemon_control)")}
-    assert run(repo.read_run(str(snapshot.id))).snapshot == snapshot
-    assert run(repo.get_profile("kept")).config.target.model == "version-one-target"
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
 
 
 def test_migration_and_initialization_excluded_by_live_daemon(tmp_path):
@@ -198,48 +168,6 @@ def test_network_style_storage_is_rejected_without_creating_it(path):
     assert error.value.code == "storage_location"
 
 
-def test_migration_writer_contention_respects_its_timeout(tmp_path):
-    repo = Repository(tmp_path)
-    with closing(sqlite3.connect(repo.database_path, isolation_level=None)) as connection:
-        connection.executescript(
-            files("asclepius").joinpath("migrations/001_initial.sql").read_text()
-        )
-        connection.execute("PRAGMA user_version=1")
-        connection.execute("BEGIN IMMEDIATE")
-        started = time.monotonic()
-        try:
-            with pytest.raises(AppError) as error:
-                migrate_storage(tmp_path, timeout=0.1)
-            assert error.value.code == "storage_busy"
-            assert time.monotonic() - started < 1
-        finally:
-            connection.rollback()
-
-
-def test_failed_upgrade_rolls_back_schema_and_preserves_version(tmp_path, monkeypatch):
-    import asclepius.maintenance as maintenance
-
-    repo = Repository(tmp_path)
-    with closing(sqlite3.connect(repo.database_path)) as connection:
-        connection.executescript(
-            files("asclepius").joinpath("migrations/001_initial.sql").read_text()
-        )
-        connection.execute("PRAGMA user_version=1")
-        connection.commit()
-    monkeypatch.setattr(
-        maintenance,
-        "_script",
-        lambda _: "ALTER TABLE daemon_control ADD COLUMN pid INTEGER; INVALID SQL;",
-    )
-    with pytest.raises(AppError):
-        migrate_storage(tmp_path)
-    with closing(sqlite3.connect(repo.database_path)) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
-        assert "pid" not in {
-            row[1] for row in connection.execute("PRAGMA table_info(daemon_control)")
-        }
-
-
 def test_wsl_symlink_to_windows_storage_is_rejected(tmp_path):
     import os
     from pathlib import Path
@@ -251,22 +179,3 @@ def test_wsl_symlink_to_windows_storage_is_rejected(tmp_path):
     with pytest.raises(AppError) as error:
         Repository(alias / "asclepius-location-probe")
     assert error.value.code == "storage_location"
-
-
-def test_v2_upgrade_preserves_data_and_defaults_execution_capability_false(tmp_path):
-    from uuid import uuid4
-
-    repo = Repository(tmp_path)
-    old_owner = str(uuid4())
-    with closing(sqlite3.connect(repo.database_path)) as connection:
-        connection.executescript(
-            files("asclepius").joinpath("migrations/001_initial.sql").read_text()
-            + files("asclepius").joinpath("migrations/002_daemon_pid.sql").read_text()
-        )
-        connection.execute("UPDATE daemon_control SET instance_id=?,state='stopped'", (old_owner,))
-        connection.execute("PRAGMA user_version=2")
-        connection.commit()
-    assert migrate_storage(tmp_path) == 4
-    control = run(repo.control())
-    assert str(control.instance_id) == old_owner
-    assert control.execution_available is False

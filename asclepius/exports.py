@@ -53,7 +53,6 @@ def _sections(view: RunView, summary: RunResults):
         {
             "attacks": summary.attacks.model_dump(mode="json"),
             "controls": summary.controls.model_dump(mode="json"),
-            "legacy_unclassified": summary.legacy_unclassified.model_dump(mode="json"),
         },
     )
     yield (
@@ -69,10 +68,6 @@ def _sections(view: RunView, summary: RunResults):
     )
     yield "Stage diagnostics", [item.model_dump(mode="json") for item in view.attempts]
     yield "Generated cases", [item.model_dump(mode="json") for item in view.variants]
-    yield (
-        "Legacy cases with unknown kind and saved requests",
-        [item.model_dump(mode="json") for item in view.legacy_cases],
-    )
     yield (
         "Observations and raw byte metadata",
         [item.model_dump(mode="json") for item in view.observations],
