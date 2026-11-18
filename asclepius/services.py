@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from asclepius.checks import require_executable
 from asclepius.domain import (
+    ROLES,
     AppError,
     CheckDefinition,
     EvaluatorConfig,
@@ -21,13 +22,7 @@ from asclepius.transport import valid_secret
 def validate_credentials(profile: ProfileConfig, evaluator: EvaluatorConfig) -> None:
     references = {profile.target.secret_ref}
     references.update(
-        role.secret_ref
-        for role in (
-            evaluator.roles.selector,
-            evaluator.roles.generator,
-            evaluator.roles.judge,
-            evaluator.roles.reporter,
-        )
+        role.secret_ref for role in (getattr(evaluator.roles, name) for name in ROLES)
     )
     values = [os.environ.get(reference[4:], "") for reference in references if reference]
     if any(not value.strip() for value in values):

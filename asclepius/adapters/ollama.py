@@ -1,11 +1,12 @@
 from typing import Literal
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
-from asclepius.adapters.chat import ChatAdapter, PreparedCall, _WireModel
-from asclepius.domain import AppError, NonNegativeInt, Observation, OperationRequest
+from asclepius.domain import AppError, NonNegativeInt
 
-ADAPTER = "ollama-chat"
+
+class _WireModel(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True, hide_input_in_errors=True)
 
 
 class _Message(_WireModel):
@@ -65,17 +66,3 @@ def as_chat_completion(data: dict) -> dict:
             "completion_tokens": reply.eval_count,
         },
     }
-
-
-class OllamaAdapter(ChatAdapter):
-    def _require_local(self) -> None:
-        if self.connection.snapshot.profile.target.adapter != ADAPTER:
-            raise AppError("unsupported_adapter", "This adapter requires an Ollama target.", 2)
-
-    def prepare(self, request: OperationRequest) -> PreparedCall:
-        self._require_local()
-        return super().prepare(request)
-
-    async def execute_prepared(self, call: PreparedCall) -> Observation:
-        self._require_local()
-        return await super().execute_prepared(call)

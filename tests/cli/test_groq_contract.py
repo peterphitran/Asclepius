@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from asclepius.adapters.chat import ChatAdapter, GroqConnection
+from asclepius.adapters.chat import GroqConnection
 from asclepius.domain import (
     AppError,
     ChatInput,
@@ -135,9 +135,8 @@ async def setup(groq, tmp_path, monkeypatch, *, variant=False, **limits):
         )
     budgets = BudgetManager(repo, OWNER, limits=profile.limits)
     connection = GroqConnection(snapshot, budgets, transport=transport)
-    adapter = ChatAdapter(connection)
     gateway = ModelGateway(connection, work_item_id=work_id)
-    return repo, snapshot, work_id, adapter, gateway
+    return repo, snapshot, work_id, connection, gateway
 
 
 def request(snapshot, work_id, text="synthetic-canary"):
@@ -146,6 +145,15 @@ def request(snapshot, work_id, text="synthetic-canary"):
         work_item_id=work_id,
         payload=ChatInput(messages=(Message(role="user", content=text),)),
     )
+
+
+def prepare_target(connection, work_id, text="synthetic-canary"):
+    payload = ChatInput(messages=(Message(role="user", content=text),))
+    return connection.prepare_target(work_id, payload)
+
+
+async def execute_target(connection, work_id, text="synthetic-canary"):
+    return await connection.execute(prepare_target(connection, work_id, text))
 
 
 def reservations(repo):
@@ -157,15 +165,15 @@ def reservations(repo):
 
 def test_target_real_request_metadata_and_persistable_preparation(groq, tmp_path, monkeypatch):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
-        call = adapter.prepare(request(snapshot, work))
+        repo, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
+        call = prepare_target(connection, work)
         assert json.loads(call.body_json)["messages"] == [
             {"role": "system", "content": "Profile policy"},
             {"role": "user", "content": "synthetic-canary"},
         ]
         intent = await repo.begin_operation(call.request, instance_id=OWNER)
         assert intent.created
-        observation = await adapter.execute_prepared(call)
+        observation = await connection.execute(call)
         await repo.save_observation(observation, instance_id=OWNER)
         saved = (await repo.read_run(str(snapshot.id))).observations[0]
         assert saved == observation
@@ -217,10 +225,10 @@ def test_evaluator_is_independent_and_strict_with_immutable_evidence(groq, tmp_p
 @pytest.mark.parametrize("status", [401, 403, 429, 500, 503, 307])
 def test_provider_errors_cost_one_call_without_fallback(groq, tmp_path, monkeypatch, status):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        repo, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
         groq[0].status = status
         groq[0].body = b"target-secret-123"
-        observation = await adapter.execute(request(snapshot, work))
+        observation = await execute_target(connection, work)
         assert observation.status == "transport_error"
         assert observation.error_code == f"provider_http_{status}"
         assert observation.payload is None
@@ -244,9 +252,9 @@ def test_provider_errors_cost_one_call_without_fallback(groq, tmp_path, monkeypa
 )
 def test_bad_or_unsupported_replies_are_not_success(groq, tmp_path, monkeypatch, body, code):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        repo, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
         groq[0].body = json.dumps(body).encode()
-        observation = await adapter.execute(request(snapshot, work))
+        observation = await execute_target(connection, work)
         assert observation.error_code == code
         assert observation.status == "transport_error"
         assert observation.payload is None
@@ -258,11 +266,11 @@ def test_bad_or_unsupported_replies_are_not_success(groq, tmp_path, monkeypatch,
 
 def test_absent_usage_is_unknown_not_zero(groq, tmp_path, monkeypatch):
     async def scenario():
-        _, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        _, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
         data = reply()
         del data["usage"]
         groq[0].body = json.dumps(data).encode()
-        observation = await adapter.execute(request(snapshot, work))
+        observation = await execute_target(connection, work)
         assert observation.payload.usage.input_tokens is None
         assert observation.payload.usage.output_tokens is None
 
@@ -271,11 +279,11 @@ def test_absent_usage_is_unknown_not_zero(groq, tmp_path, monkeypatch):
 
 def test_secrets_redacted_in_request_response_not_canary(groq, tmp_path, monkeypatch):
     async def scenario():
-        _, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        _, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
         text = "target-secret-123 evaluator-secret-456 synthetic-canary"
         groq[0].body = json.dumps(reply(text)).encode()
-        call = adapter.prepare(request(snapshot, work, text))
-        observation = await adapter.execute_prepared(call)
+        call = prepare_target(connection, work, text)
+        observation = await connection.execute(call)
         for serialized in (call.model_dump_json(), observation.model_dump_json()):
             assert "target-secret-123" not in serialized
             assert "evaluator-secret-456" not in serialized
@@ -315,14 +323,16 @@ def test_invalid_evaluator_output_keeps_observation(
 
 def test_limits_reject_new_dispatch_and_retain_target_truncation(groq, tmp_path, monkeypatch):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch, target_calls=1)
+        repo, snapshot, work, connection, _ = await setup(
+            groq, tmp_path, monkeypatch, target_calls=1
+        )
         groq[0].body = json.dumps(reply("partial", "length")).encode()
-        observation = await adapter.execute(request(snapshot, work))
+        observation = await execute_target(connection, work)
         assert observation.status == "success"
         assert observation.truncated is True
         assert observation.payload.content == "partial"
         with pytest.raises(AppError) as caught:
-            await adapter.execute(request(snapshot, work))
+            await execute_target(connection, work)
         assert caught.value.code == "budget_exhausted"
         assert len(groq[0].calls) == 1
         assert len(reservations(repo)) == 1
@@ -336,16 +346,16 @@ def test_https_empty_length_reply_preserves_truncated_evidence(
     groq, tmp_path, monkeypatch, actor, content
 ):
     async def scenario():
-        repo, snapshot, work, adapter, gateway = await setup(groq, tmp_path, monkeypatch)
+        repo, snapshot, work, connection, gateway = await setup(groq, tmp_path, monkeypatch)
         groq[0].body = json.dumps(reply(content, "length")).encode()
         if actor == "target":
-            call = adapter.prepare(request(snapshot, work))
+            call = prepare_target(connection, work)
         else:
             evaluation = gateway.prepare(actor, {}, Answer)
             call = evaluation.call
         await repo.begin_operation(call.request, instance_id=OWNER)
         if actor == "target":
-            observation = await adapter.execute_prepared(call)
+            observation = await connection.execute(call)
         else:
             result = await gateway.execute(evaluation)
             assert result.output is None
@@ -374,11 +384,9 @@ def test_missing_selected_secret_never_dispatches(groq, tmp_path, monkeypatch):
     async def scenario():
         repo, snapshot, work, _, _ = await setup(groq, tmp_path, monkeypatch)
         monkeypatch.delenv("TARGET_KEY")
-        adapter = ChatAdapter(
-            GroqConnection(snapshot, BudgetManager(repo, OWNER), transport=groq[1])
-        )
+        connection = GroqConnection(snapshot, BudgetManager(repo, OWNER), transport=groq[1])
         with pytest.raises(AppError) as caught:
-            await adapter.execute(request(snapshot, work))
+            await execute_target(connection, work)
         assert caught.value.code == "secret_missing"
         assert groq[0].calls == []
         assert reservations(repo) == []
@@ -386,16 +394,15 @@ def test_missing_selected_secret_never_dispatches(groq, tmp_path, monkeypatch):
     asyncio.run(scenario())
 
 
-def test_wrong_run_or_actor_and_oversized_input_never_dispatch(groq, tmp_path, monkeypatch):
+def test_wrong_run_and_oversized_input_never_dispatch(groq, tmp_path, monkeypatch):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        repo, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
         for invalid in (
             request(snapshot, work).model_copy(update={"run_id": uuid4()}),
-            request(snapshot, work).model_copy(update={"actor": "judge"}),
             request(snapshot, work, "x" * 20000),
         ):
             with pytest.raises(AppError):
-                await adapter.execute(invalid)
+                await connection.execute(connection.prepare(invalid))
         assert groq[0].calls == []
         assert reservations(repo) == []
 
@@ -462,9 +469,9 @@ def test_escaped_credential_in_evaluator_payload_is_redacted(groq, tmp_path, mon
 
 def test_invalid_unicode_reply_is_a_sanitized_observation(groq, tmp_path, monkeypatch):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        repo, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
         groq[0].body = json.dumps(reply("\ud800")).encode()
-        observation = await adapter.execute(request(snapshot, work))
+        observation = await execute_target(connection, work)
         assert observation.error_code == "provider_response"
         assert observation.payload is None
         assert reservations(repo)[0][1] == "settled"
@@ -474,9 +481,9 @@ def test_invalid_unicode_reply_is_a_sanitized_observation(groq, tmp_path, monkey
 
 def test_invalid_unicode_input_never_dispatches(groq, tmp_path, monkeypatch):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        repo, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
         with pytest.raises(AppError) as caught:
-            await adapter.execute(request(snapshot, work, "\ud800"))
+            await execute_target(connection, work, "\ud800")
         assert caught.value.code == "invalid_input"
         assert groq[0].calls == []
         assert reservations(repo) == []
@@ -486,10 +493,10 @@ def test_invalid_unicode_input_never_dispatches(groq, tmp_path, monkeypatch):
 
 def test_captured_credentials_remain_bound_to_run(groq, tmp_path, monkeypatch):
     async def scenario():
-        _, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        _, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
         monkeypatch.setenv("TARGET_KEY", "changed-after-capture")
         groq[0].body = json.dumps(reply("target-secret-123 synthetic-canary")).encode()
-        observation = await adapter.execute(request(snapshot, work))
+        observation = await execute_target(connection, work)
         assert groq[0].calls[0][1]["Authorization"] == "Bearer target-secret-123"
         assert observation.payload.content == "[REDACTED] synthetic-canary"
 
@@ -527,10 +534,10 @@ def test_schema_rejection_never_uses_fallback(groq, tmp_path, monkeypatch):
 
 def test_response_cap_preserves_uncertainty_and_consumes_budget(groq, tmp_path, monkeypatch):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(
+        repo, snapshot, work, connection, _ = await setup(
             groq, tmp_path, monkeypatch, response_bytes=16
         )
-        observation = await adapter.execute(request(snapshot, work))
+        observation = await execute_target(connection, work)
         assert observation.error_code == "response_too_large"
         assert observation.truncated
         assert observation.payload is None
@@ -542,13 +549,13 @@ def test_response_cap_preserves_uncertainty_and_consumes_budget(groq, tmp_path, 
 
 def test_target_and_evaluator_share_the_same_outbound_gate(groq, tmp_path, monkeypatch):
     async def scenario():
-        repo, snapshot, work, adapter, gateway = await setup(
+        repo, snapshot, work, connection, gateway = await setup(
             groq, tmp_path, monkeypatch, outbound_concurrency=1
         )
         groq[0].delay = 0.2
         groq[0].body = json.dumps(reply('{"verdict":"pass","score":2}')).encode()
         target, evaluator = await asyncio.gather(
-            adapter.execute(request(snapshot, work)), gateway.generate("judge", {}, Answer)
+            execute_target(connection, work), gateway.generate("judge", {}, Answer)
         )
         assert target.status == "success"
         assert evaluator == Answer(verdict="pass", score=2)
@@ -564,10 +571,11 @@ def test_target_and_evaluator_share_the_same_outbound_gate(groq, tmp_path, monke
 
 def test_older_operation_and_observation_json_replays_without_rewrite(groq, tmp_path, monkeypatch):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
-        raw = request(snapshot, work)
+        repo, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
+        call = prepare_target(connection, work)
+        raw = call.request.model_copy(update={"provider_body_json": None})
         await repo.begin_operation(raw, instance_id=OWNER)
-        observation = await adapter.execute(raw)
+        observation = await connection.execute(call)
         await repo.save_observation(observation, instance_id=OWNER)
         old_request = raw.model_dump(mode="json")
         old_request.pop("provider_body_json")
@@ -621,15 +629,14 @@ def test_escaped_credential_in_json_reply_and_target_request_is_redacted(
         key = 'secret-with-"quote-and-\\slash'
         monkeypatch.setenv("TARGET_KEY", key)
         connection = GroqConnection(snapshot, BudgetManager(repo, OWNER), transport=groq[1])
-        adapter = ChatAdapter(connection)
         encoded = json.dumps({"evidence": key, "canary": "synthetic-canary"})
         groq[0].body = json.dumps(reply(encoded)).encode()
-        call = adapter.prepare(request(snapshot, work, encoded))
+        call = prepare_target(connection, work, encoded)
         assert json.loads(call.request.payload.messages[-1].content) == {
             "evidence": "[REDACTED]",
             "canary": "synthetic-canary",
         }
-        observation = await adapter.execute_prepared(call)
+        observation = await connection.execute(call)
         assert json.loads(observation.payload.content) == {
             "evidence": "[REDACTED]",
             "canary": "synthetic-canary",
@@ -665,7 +672,7 @@ def test_nested_json_string_cannot_retain_an_escaped_credential(groq, tmp_path, 
         connection = GroqConnection(snapshot, BudgetManager(repo, OWNER), transport=groq[1])
         text = json.dumps({"evidence": json.dumps({"secret": key, "canary": "synthetic-canary"})})
         groq[0].body = json.dumps(reply(text)).encode()
-        observation = await ChatAdapter(connection).execute(request(snapshot, work, text))
+        observation = await execute_target(connection, work, text)
         for content in (
             observation.payload.content,
             observation.request_payload.messages[-1].content,
@@ -709,15 +716,15 @@ def test_json_property_names_cannot_hide_encoded_credentials(groq, tmp_path, mon
 
 def test_redaction_depth_fails_closed(groq, tmp_path, monkeypatch):
     async def scenario():
-        _, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        _, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
         content = '["x"]'
         for _ in range(70):
             content = "[" + content + "]"
         with pytest.raises(AppError) as caught:
-            adapter.prepare(request(snapshot, work, content))
+            prepare_target(connection, work, content)
         assert caught.value.code == "redaction_limit"
         groq[0].body = json.dumps(reply(content)).encode()
-        observation = await adapter.execute(request(snapshot, work))
+        observation = await execute_target(connection, work)
         assert observation.error_code == "redaction_limit"
         assert observation.payload is None
 
@@ -729,10 +736,10 @@ def test_cancellation_waiting_for_slot_releases_allowance(
     groq, tmp_path, monkeypatch, cancel_release
 ):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(
+        repo, snapshot, work, connection, _ = await setup(
             groq, tmp_path, monkeypatch, outbound_concurrency=1, target_calls=1
         )
-        budgets = adapter.connection.budgets
+        budgets = connection.budgets
         releasing = threading.Event()
         finish_release = threading.Event()
         transaction = repo._transaction
@@ -756,7 +763,7 @@ def test_cancellation_waiting_for_slot_releases_allowance(
         try:
             async with slot(snapshot, "target"):
                 monkeypatch.setattr(budgets, "slot", waiting_slot)
-                task = asyncio.create_task(adapter.execute(request(snapshot, work)))
+                task = asyncio.create_task(execute_target(connection, work))
                 await asyncio.wait_for(waiting.wait(), 5)
                 assert reservations(repo) == [("target", "reserved", 512)]
                 task.cancel()
@@ -769,7 +776,7 @@ def test_cancellation_waiting_for_slot_releases_allowance(
                 assert groq[0].calls == []
                 assert reservations(repo) == [("target", "released", 512)]
             monkeypatch.setattr(repo, "_transaction", transaction)
-            observation = await adapter.execute(request(snapshot, work))
+            observation = await execute_target(connection, work)
             assert observation.status == "success"
             assert len(groq[0].calls) == 1
             assert reservations(repo) == [
@@ -788,7 +795,9 @@ def test_cancellation_with_unknown_worker_outcome_preserves_allowance(
     groq, tmp_path, monkeypatch, worker_state
 ):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch, target_calls=1)
+        repo, snapshot, work, connection, _ = await setup(
+            groq, tmp_path, monkeypatch, target_calls=1
+        )
         committed = threading.Event()
         finish_worker = threading.Event()
         transaction = repo._transaction
@@ -801,7 +810,7 @@ def test_cancellation_with_unknown_worker_outcome_preserves_allowance(
             return result
 
         monkeypatch.setattr(repo, "_transaction", blocked_worker)
-        task = asyncio.create_task(adapter.execute(request(snapshot, work)))
+        task = asyncio.create_task(execute_target(connection, work))
         try:
             assert await asyncio.to_thread(committed.wait, 5)
             task.cancel()
@@ -812,7 +821,7 @@ def test_cancellation_with_unknown_worker_outcome_preserves_allowance(
         assert reservations(repo) == [("target", worker_state, 512)]
         assert groq[0].calls == []
         with pytest.raises(AppError) as caught:
-            await adapter.execute(request(snapshot, work))
+            await execute_target(connection, work)
         assert caught.value.code == "budget_exhausted"
         assert groq[0].calls == []
 
@@ -823,16 +832,18 @@ def test_cancellation_after_https_dispatch_keeps_allowance_without_retry(
     groq, tmp_path, monkeypatch
 ):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch, target_calls=1)
+        repo, snapshot, work, connection, _ = await setup(
+            groq, tmp_path, monkeypatch, target_calls=1
+        )
         groq[0].delay = 0.2
-        task = asyncio.create_task(adapter.execute(request(snapshot, work)))
+        task = asyncio.create_task(execute_target(connection, work))
         assert await asyncio.to_thread(groq[0].received.wait, 5)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
         assert reservations(repo) == [("target", "settled", 512)]
         with pytest.raises(AppError) as caught:
-            await adapter.execute(request(snapshot, work))
+            await execute_target(connection, work)
         assert caught.value.code == "budget_exhausted"
         assert len(groq[0].calls) == 1
 
@@ -845,17 +856,17 @@ def test_https_retry_after_survives_error_evidence_without_retry(
     groq, tmp_path, monkeypatch, actor, header
 ):
     async def scenario():
-        repo, snapshot, work, adapter, gateway = await setup(groq, tmp_path, monkeypatch)
+        repo, snapshot, work, connection, gateway = await setup(groq, tmp_path, monkeypatch)
         groq[0].status = 503
         groq[0].retry_after = [header]
         if actor == "target":
-            call = adapter.prepare(request(snapshot, work))
+            call = prepare_target(connection, work)
         else:
             evaluation = gateway.prepare(actor, {}, Answer)
             call = evaluation.call
         await repo.begin_operation(call.request, instance_id=OWNER)
         if actor == "target":
-            observation = await adapter.execute_prepared(call)
+            observation = await connection.execute(call)
         else:
             result = await gateway.execute(evaluation)
             assert result.output is None
@@ -887,7 +898,7 @@ def test_https_retry_after_cannot_reflect_any_configured_credential(
     groq, tmp_path, monkeypatch, secret_actor, header, secret
 ):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        repo, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
         monkeypatch.setenv("RETRY_SECRET", secret)
         document = snapshot.model_dump(mode="json")
         if secret_actor == "target":
@@ -895,7 +906,7 @@ def test_https_retry_after_cannot_reflect_any_configured_credential(
         else:
             document["evaluator"]["roles"][secret_actor]["secret_ref"] = "env:RETRY_SECRET"
         pinned = type(snapshot).model_validate(document)
-        connection = GroqConnection(pinned, adapter.connection.budgets, transport=groq[1])
+        connection = GroqConnection(pinned, connection.budgets, transport=groq[1])
         operation = request(pinned, work).model_copy(
             update={"actor": "judge" if secret_actor == "target" else "target"}
         )
@@ -921,16 +932,16 @@ def test_dispatch_failure_retains_received_reply_when_settlement_fails(groq, tmp
     from asclepius.adapters.chat import DispatchFailure
 
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
-        call = adapter.prepare(request(snapshot, work))
+        repo, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
+        call = prepare_target(connection, work)
         await repo.begin_operation(call.request, instance_id=OWNER)
 
         async def fail_settlement(reservation):
             raise AppError("storage_error", "Injected settlement failure")
 
-        monkeypatch.setattr(adapter.connection.budgets, "settle", fail_settlement)
+        monkeypatch.setattr(connection.budgets, "settle", fail_settlement)
         with pytest.raises(DispatchFailure) as caught:
-            await adapter.execute_prepared(call)
+            await connection.execute(call)
         observation = caught.value.observation
         assert observation.status == "success"
         assert observation.payload.content == "hello"
@@ -948,10 +959,10 @@ def test_local_budget_rejection_has_explicit_nondispatch_metadata(groq, tmp_path
     from asclepius.adapters.chat import DispatchFailure
 
     async def scenario():
-        _, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch, target_calls=1)
-        await adapter.execute(request(snapshot, work))
+        _, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch, target_calls=1)
+        await execute_target(connection, work)
         with pytest.raises(DispatchFailure) as caught:
-            await adapter.execute(request(snapshot, work))
+            await execute_target(connection, work)
         observation = caught.value.observation
         assert observation.dispatch_status == "not_dispatched"
         assert observation.status == "transport_error" and observation.payload is None
@@ -963,10 +974,10 @@ def test_local_budget_rejection_has_explicit_nondispatch_metadata(groq, tmp_path
 
 def test_prepared_intent_rejects_changed_observation_request_payload(groq, tmp_path, monkeypatch):
     async def scenario():
-        repo, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
-        call = adapter.prepare(request(snapshot, work))
+        repo, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
+        call = prepare_target(connection, work)
         await repo.begin_operation(call.request, instance_id=OWNER)
-        observation = await adapter.execute_prepared(call)
+        observation = await connection.execute(call)
         changed = observation.model_copy(
             update={
                 "request_payload": ChatInput(messages=(Message(role="user", content="changed"),))
@@ -990,11 +1001,11 @@ def test_coordinator_storage_failure_keeps_received_evidence_and_running_owner(
     from asclepius.domain import RunState
 
     async def scenario():
-        repo, snapshot, _, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        repo, snapshot, _, connection, _ = await setup(groq, tmp_path, monkeypatch)
         plan = load_pack_plan("broad-chat-v1")
         snapshot = snapshot.model_copy(update={"checks": plan.checks, "prompts": plan.prompts})
-        with sqlite3.connect(repo.database_path) as connection:
-            connection.execute(
+        with sqlite3.connect(repo.database_path) as db:
+            db.execute(
                 "UPDATE runs SET snapshot_json=? WHERE id=?",
                 (snapshot.model_dump_json(), str(snapshot.id)),
             )
@@ -1002,9 +1013,9 @@ def test_coordinator_storage_failure_keeps_received_evidence_and_running_owner(
         async def fail_settlement(reservation):
             raise AppError("storage_error", "Injected settlement failure")
 
-        monkeypatch.setattr(adapter.connection.budgets, "settle", fail_settlement)
+        monkeypatch.setattr(connection.budgets, "settle", fail_settlement)
         with pytest.raises(AppError) as caught:
-            await Coordinator(repo, adapter.connection.budgets, transport=groq[1]).execute(snapshot)
+            await Coordinator(repo, connection.budgets, transport=groq[1]).execute(snapshot)
         assert caught.value.code == "storage_error"
         view = await repo.read_run(str(snapshot.id))
         assert view.state == RunState.RUNNING
@@ -1024,17 +1035,17 @@ def test_https_reported_model_is_optional_provider_evidence(
     groq, tmp_path, monkeypatch, actor, metadata
 ):
     async def scenario():
-        repo, snapshot, work, adapter, gateway = await setup(groq, tmp_path, monkeypatch)
+        repo, snapshot, work, connection, gateway = await setup(groq, tmp_path, monkeypatch)
         content = "hello" if actor == "target" else '{"verdict":"pass","score":2}'
         groq[0].body = json.dumps({**reply(content), **metadata}).encode()
         if actor == "target":
-            call = adapter.prepare(request(snapshot, work))
+            call = prepare_target(connection, work)
         else:
             evaluation = gateway.prepare(actor, {}, Answer)
             call = evaluation.call
         await repo.begin_operation(call.request, instance_id=OWNER)
         if actor == "target":
-            observation = await adapter.execute_prepared(call)
+            observation = await connection.execute(call)
         else:
             result = await gateway.execute(evaluation)
             assert result.output == Answer(verdict="pass", score=2)
@@ -1059,12 +1070,12 @@ def test_https_reported_model_is_optional_provider_evidence(
 @pytest.mark.parametrize("model", [17, False, [], {}, "\ud800"])
 def test_https_invalid_reported_model_fails_safely(groq, tmp_path, monkeypatch, actor, model):
     async def scenario():
-        _, snapshot, work, adapter, gateway = await setup(groq, tmp_path, monkeypatch)
+        _, snapshot, work, connection, gateway = await setup(groq, tmp_path, monkeypatch)
         groq[0].body = json.dumps(
             {**reply('{"verdict":"pass","score":2}'), "model": model}
         ).encode()
         if actor == "target":
-            observation = await adapter.execute(request(snapshot, work))
+            observation = await execute_target(connection, work)
         else:
             result = await gateway.execute(gateway.prepare(actor, {}, Answer))
             assert result.output is None
@@ -1087,7 +1098,6 @@ def test_https_reported_models_redact_both_credentials_before_storage_and_export
         monkeypatch.setenv("TARGET_KEY", secrets[0])
         monkeypatch.setenv("EVALUATOR_KEY", secrets[1])
         connection = GroqConnection(snapshot, BudgetManager(repo, OWNER), transport=groq[1])
-        adapter = ChatAdapter(connection)
         gateway = ModelGateway(connection, work_item_id=work)
         expected_models = {}
         for actor in ("target", "judge"):
@@ -1096,13 +1106,13 @@ def test_https_reported_models_redact_both_credentials_before_storage_and_export
             content = "hello" if actor == "target" else '{"verdict":"pass","score":2}'
             groq[0].body = json.dumps({**reply(content), "model": reported}).encode()
             if actor == "target":
-                call = adapter.prepare(request(snapshot, work))
+                call = prepare_target(connection, work)
             else:
                 evaluation = gateway.prepare(actor, {}, Answer)
                 call = evaluation.call
             await repo.begin_operation(call.request, instance_id=OWNER)
             if actor == "target":
-                observation = await adapter.execute_prepared(call)
+                observation = await connection.execute(call)
             else:
                 result = await gateway.execute(evaluation)
                 assert result.output == Answer(verdict="pass", score=2)
@@ -1145,19 +1155,19 @@ def test_https_reported_models_redact_both_credentials_before_storage_and_export
 @pytest.mark.parametrize("actor", ["target", "judge"])
 def test_metadata_redaction_cannot_materialize_invalid_unicode(groq, tmp_path, monkeypatch, actor):
     async def scenario():
-        repo, snapshot, work, adapter, gateway = await setup(groq, tmp_path, monkeypatch)
+        repo, snapshot, work, connection, gateway = await setup(groq, tmp_path, monkeypatch)
         model = json.dumps({"name": "\ud800", "credential": "target-secret-123"})
         groq[0].body = json.dumps(
             {**reply('{"verdict":"pass","score":2}'), "model": model}
         ).encode()
         if actor == "target":
-            call = adapter.prepare(request(snapshot, work))
+            call = prepare_target(connection, work)
         else:
             evaluation = gateway.prepare(actor, {}, Answer)
             call = evaluation.call
         await repo.begin_operation(call.request, instance_id=OWNER)
         if actor == "target":
-            observation = await adapter.execute_prepared(call)
+            observation = await connection.execute(call)
         else:
             result = await gateway.execute(evaluation)
             observation = result.observation
@@ -1198,11 +1208,11 @@ def test_token_estimate_is_input_bytes_over_four_plus_output_cap(
     groq, tmp_path, monkeypatch, actor
 ):
     async def scenario():
-        _, snapshot, work, adapter, gateway = await setup(groq, tmp_path, monkeypatch)
-        charged = spy_token_leases(adapter.connection.budgets)
+        _, snapshot, work, connection, gateway = await setup(groq, tmp_path, monkeypatch)
+        charged = spy_token_leases(connection.budgets)
         if actor == "target":
-            call = adapter.prepare(request(snapshot, work))
-            await adapter.execute(request(snapshot, work))
+            call = prepare_target(connection, work)
+            await execute_target(connection, work)
             cap = snapshot.profile.target.max_completion_tokens
         else:
             groq[0].body = json.dumps(reply('{"verdict":"pass","score":2}')).encode()
@@ -1219,15 +1229,15 @@ def test_token_estimate_is_input_bytes_over_four_plus_output_cap(
 @pytest.mark.parametrize("usage", [None, {"prompt_tokens": 13}, {"completion_tokens": 7}])
 def test_incomplete_usage_keeps_the_token_estimate(groq, tmp_path, monkeypatch, usage):
     async def scenario():
-        _, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
-        charged = spy_token_leases(adapter.connection.budgets)
+        _, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
+        charged = spy_token_leases(connection.budgets)
         data = reply()
         if usage is None:
             del data["usage"]
         else:
             data["usage"] = usage
         groq[0].body = json.dumps(data).encode()
-        await adapter.execute(request(snapshot, work))
+        await execute_target(connection, work)
         assert charged[0]["measured"] in ([], [None])
 
     asyncio.run(scenario())
@@ -1235,10 +1245,10 @@ def test_incomplete_usage_keeps_the_token_estimate(groq, tmp_path, monkeypatch, 
 
 def test_provider_error_keeps_the_token_estimate(groq, tmp_path, monkeypatch):
     async def scenario():
-        _, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
-        charged = spy_token_leases(adapter.connection.budgets)
+        _, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
+        charged = spy_token_leases(connection.budgets)
         groq[0].status = 429
-        observation = await adapter.execute(request(snapshot, work))
+        observation = await execute_target(connection, work)
         assert observation.error_code == "provider_http_429"
         assert charged[0]["estimate"] > 0
         assert charged[0]["measured"] in ([], [None])
@@ -1268,15 +1278,15 @@ def _with_reasoning(snapshot, server, effort):
 
 def test_evaluator_reasoning_effort_is_sent_only_when_configured(groq, tmp_path, monkeypatch):
     async def scenario():
-        _, snapshot, work, adapter, gateway = await setup(groq, tmp_path, monkeypatch)
+        _, snapshot, work, connection, gateway = await setup(groq, tmp_path, monkeypatch)
         default = json.loads(gateway.prepare("judge", {}, Answer).call.body_json)
         assert "reasoning_effort" not in default
         configured = _with_reasoning(snapshot, groq[0], "low")
-        connection = GroqConnection(configured, adapter.connection.budgets, transport=groq[1])
+        connection = GroqConnection(configured, connection.budgets, transport=groq[1])
         for role in ("selector", "generator", "judge", "reporter"):
             prepared = ModelGateway(connection, work_item_id=work).prepare(role, {}, Answer)
             assert json.loads(prepared.call.body_json)["reasoning_effort"] == "low"
-        target_body = json.loads(ChatAdapter(connection).prepare(request(snapshot, work)).body_json)
+        target_body = json.loads(prepare_target(connection, work).body_json)
         assert "reasoning_effort" not in target_body
 
     asyncio.run(scenario())
@@ -1284,10 +1294,10 @@ def test_evaluator_reasoning_effort_is_sent_only_when_configured(groq, tmp_path,
 
 def test_reasoning_effort_reaches_the_provider(groq, tmp_path, monkeypatch):
     async def scenario():
-        _, snapshot, work, adapter, _ = await setup(groq, tmp_path, monkeypatch)
+        _, snapshot, work, connection, _ = await setup(groq, tmp_path, monkeypatch)
         groq[0].body = json.dumps(reply('{"verdict":"pass","score":2}')).encode()
         configured = _with_reasoning(snapshot, groq[0], "low")
-        connection = GroqConnection(configured, adapter.connection.budgets, transport=groq[1])
+        connection = GroqConnection(configured, connection.budgets, transport=groq[1])
         await ModelGateway(connection, work_item_id=work).generate("judge", {}, Answer)
         assert groq[0].calls[-1][2]["reasoning_effort"] == "low"
 

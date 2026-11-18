@@ -17,13 +17,12 @@ from pydantic import BaseModel, ConfigDict
 
 import asclepius
 from asclepius.adapters import chat
-from asclepius.adapters.chat import ChatAdapter, GroqConnection
+from asclepius.adapters.chat import GroqConnection
 from asclepius.domain import (
     ChatInput,
     CheckDefinition,
     EvaluatorConfig,
     Message,
-    OperationRequest,
     ProfileConfig,
     PromptSnapshot,
     RunSnapshot,
@@ -142,17 +141,12 @@ async def prove(data_dir, server, transport):
         work = uuid4()
         await repo.register_work_item(str(snapshot.id), str(work), "proof", instance_id=owner)
         connection = GroqConnection(snapshot, BudgetManager(repo, owner), transport=transport)
-        target = ChatAdapter(connection)
-        call = target.prepare(
-            OperationRequest(
-                run_id=snapshot.id,
-                work_item_id=work,
-                payload=ChatInput(messages=(Message(role="user", content="synthetic-canary"),)),
-            )
+        call = connection.prepare_target(
+            work, ChatInput(messages=(Message(role="user", content="synthetic-canary"),))
         )
         assert (await repo.begin_operation(call.request, instance_id=owner)).created
         with patch.object(chat, "datetime", ReversedUTC):
-            observation = await target.execute_prepared(call)
+            observation = await connection.execute(call)
         assert observation.status == "success"
         assert observation.payload.content == "synthetic-canary"
         await repo.save_observation(observation, instance_id=owner)

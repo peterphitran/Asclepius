@@ -9,8 +9,8 @@ from pydantic import BaseModel, ValidationError
 from referencing import Registry
 from referencing.exceptions import Unresolvable
 
-from asclepius.adapters.chat import ROLES, GroqConnection, PreparedCall
-from asclepius.domain import AppError, ChatInput, Message, Observation, OperationRequest
+from asclepius.adapters.chat import GroqConnection, PreparedCall
+from asclepius.domain import ROLES, AppError, ChatInput, Message, Observation, OperationRequest
 
 
 @dataclass(frozen=True)

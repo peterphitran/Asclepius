@@ -5,7 +5,8 @@ import urllib.request
 
 import pytest
 
-from tests.cli.test_ollama import request, setup
+from tests.cli.test_groq_contract import execute_target
+from tests.cli.test_ollama import setup
 
 
 def _live_settings():
@@ -37,11 +38,9 @@ def test_live_local_chat_observation(tmp_path, monkeypatch):
     base, model = _live_settings()
 
     async def scenario():
-        _, snapshot, work, connection, adapter = await setup(
-            None, tmp_path, monkeypatch, base_url=base
-        )
+        _, snapshot, work, connection = await setup(None, tmp_path, monkeypatch, base_url=base)
         connection.snapshot = _with_model(snapshot, model)
-        observation = await adapter.execute(request(connection.snapshot, work, "Reply with OK."))
+        observation = await execute_target(connection, work, "Reply with OK.")
         assert observation.status == "success", observation.error_code
         assert observation.payload.content.strip()
         assert observation.payload.provider_model
@@ -55,11 +54,9 @@ def test_live_missing_model_is_reported_not_pulled(tmp_path, monkeypatch):
     base, _ = _live_settings()
 
     async def scenario():
-        _, snapshot, work, connection, adapter = await setup(
-            None, tmp_path, monkeypatch, base_url=base
-        )
+        _, snapshot, work, connection = await setup(None, tmp_path, monkeypatch, base_url=base)
         connection.snapshot = _with_model(snapshot, "asclepius-not-installed:0")
-        observation = await adapter.execute(request(connection.snapshot, work))
+        observation = await execute_target(connection, work)
         assert observation.error_code == "local_model_missing"
 
     asyncio.run(scenario())

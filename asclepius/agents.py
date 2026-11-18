@@ -19,7 +19,6 @@ from asclepius.domain import (
     Judgment,
     Message,
     Observation,
-    OperationRequest,
     RunSnapshot,
     Selection,
     Variant,
@@ -518,10 +517,9 @@ class AgentRunner:
                 "check": check.model_dump(mode="json"),
                 "prioritized_strategy": selection.strategy,
                 "all_required_strategies": check.strategies,
-                "target_input_bytes": min(
-                    self.snapshot.profile.limits.target_input_bytes,
-                    self.connection.budgets.limits.target_input_bytes,
-                ),
+                "target_input_bytes": self.snapshot.profile.limits.tightened(
+                    self.connection.budgets.limits
+                ).target_input_bytes,
                 "maximum_attack_text_bytes": 8192,
             },
             GenerationProposal,
@@ -540,18 +538,10 @@ class AgentRunner:
         variants.append(self._variant(check, "control", None, check.benign_control))
         try:
             for variant in variants:
-                self._target_request(variant)
+                self.connection.prepare_target(variant.id, variant.payload)
         except AppError:
             raise RoleOutputError(result) from None
         return variants
-
-    def _target_request(self, variant):
-        profile = self.snapshot.profile.target.system_prompt
-        messages = (Message(role="system", content=profile),) if profile else ()
-        payload = ChatInput(messages=messages + variant.payload.messages)
-        return self.connection.prepare(
-            OperationRequest(run_id=self.snapshot.id, work_item_id=variant.id, payload=payload)
-        )
 
     def _target(
         self, observation: Observation, variant: Variant | None = None, *, succeeded: bool = True
@@ -569,7 +559,7 @@ class AgentRunner:
         if variant is not None:
             if observation.work_item_id != variant.id:
                 raise AppError("target_provenance", "Target variant does not match.", 2)
-            prepared = self._target_request(variant)
+            prepared = self.connection.prepare_target(variant.id, variant.payload)
             if observation.request_payload != prepared.request.payload:
                 raise AppError(
                     "target_provenance", "Recorded target request differs from variant.", 2

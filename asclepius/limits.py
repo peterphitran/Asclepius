@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Literal
 
 import httpx
 
-from asclepius.domain import AppError, BudgetReservation, Limits, RunSnapshot, tighter
+from asclepius.domain import ROLES, AppError, BudgetReservation, Limits, RunSnapshot
 
 if TYPE_CHECKING:
     from asclepius.storage import Repository
@@ -98,17 +98,15 @@ class BudgetManager:
             endpoint, secret_ref, grouping = target.base_url, target.secret_ref, target.resource_key
             model = target.model
         else:
-            if role not in {"selector", "generator", "judge", "reporter"}:
+            if role not in ROLES:
                 raise AppError("arguments", "Evaluator requests require a named role.", 2)
             config = getattr(snapshot.evaluator.roles, role)
             endpoint, secret_ref, grouping = config.base_url, config.secret_ref, None
             model = config.model
         origin, destination = resource_identity(endpoint)
-        pinned = snapshot.profile.limits
-        global_cap = min(self.limits.outbound_concurrency, pinned.outbound_concurrency)
-        destination_cap = min(
-            getattr(self.limits, f"{kind}_concurrency"), getattr(pinned, f"{kind}_concurrency")
-        )
+        effective = snapshot.profile.limits.tightened(self.limits)
+        global_cap = effective.outbound_concurrency
+        destination_cap = getattr(effective, f"{kind}_concurrency")
         async with AsyncExitStack() as stack:
             gates = {
                 "global": global_cap,
@@ -125,9 +123,9 @@ class BudgetManager:
             rate_keys = [f"origin:{origin}"]
             if secret_ref:
                 rate_keys.append(f"account:{secret_ref}")
-            cap = min(self.limits.requests_per_minute, pinned.requests_per_minute)
+            cap = effective.requests_per_minute
             # Providers such as Groq meter tokens per model, so token windows are per model.
-            token_cap = tighter(self.limits.tokens_per_minute, pinned.tokens_per_minute)
+            token_cap = effective.tokens_per_minute
             token_keys = [f"{key}|model:{model}" for key in rate_keys] if token_cap else []
             entries: list[list[float]] = []
             while True:

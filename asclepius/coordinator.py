@@ -2,8 +2,7 @@ import asyncio
 from dataclasses import dataclass
 from uuid import UUID
 
-from asclepius.adapters.chat import ChatAdapter, DispatchFailure, GroqConnection, PreparedCall
-from asclepius.adapters.ollama import OllamaAdapter
+from asclepius.adapters.chat import DispatchFailure, GroqConnection, PreparedCall
 from asclepius.agents import AgentRunner, check_work_item, selector_work_item
 from asclepius.domain import (
     AppError,
@@ -11,7 +10,6 @@ from asclepius.domain import (
     GenerationOutput,
     JudgmentOutput,
     Observation,
-    OperationRequest,
     RunSnapshot,
     RunState,
     SelectionOutput,
@@ -76,13 +74,7 @@ class _RunSession:
         await self.repo.save_observation(observation, instance_id=self.budgets.instance_id)
 
     async def target(self, variant: Variant) -> Observation:
-        local = self.snapshot.profile.target.adapter == "ollama-chat"
-        adapter = OllamaAdapter if local else ChatAdapter
-        call = adapter(self.connection).prepare(
-            OperationRequest(
-                run_id=self.snapshot.id, work_item_id=variant.id, payload=variant.payload
-            )
-        )
+        call = self.connection.prepare_target(variant.id, variant.payload)
         await self.intent(call)
         try:
             observation = await self.connection.execute(call)

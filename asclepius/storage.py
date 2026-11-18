@@ -13,6 +13,7 @@ import portalocker
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from asclepius.domain import (
+    ROLES,
     AppError,
     BudgetReservation,
     DaemonStatus,
@@ -38,7 +39,6 @@ from asclepius.domain import (
     StageOutput,
     Variant,
     allowed_transition,
-    tighter,
 )
 from asclepius.elapsed_clock import ClockSource, Tick, elapsed_clock
 from asclepius.maintenance import (
@@ -404,9 +404,7 @@ class Repository:
         if started is None or started.source != now.source or now.ns < started.ns:
             raise AppError("run_timeout", "Run execution clock is unavailable.")
         elapsed = now.ns - started.ns
-        deadline = snapshot.profile.limits.run_timeout_seconds
-        if runtime_limits is not None:
-            deadline = min(deadline, runtime_limits.run_timeout_seconds)
+        deadline = snapshot.profile.limits.tightened(runtime_limits).run_timeout_seconds
         if elapsed >= deadline * 1_000_000_000:
             raise AppError("run_timeout", "Run execution deadline expired.")
         return row
@@ -431,7 +429,9 @@ class Repository:
             row = self._execution(
                 connection, str(reservation.run_id), instance_id, runtime_limits=runtime_limits
             )
-            limits = RunSnapshot.model_validate_json(row["snapshot_json"]).profile.limits
+            limits = RunSnapshot.model_validate_json(row["snapshot_json"]).profile.limits.tightened(
+                runtime_limits
+            )
             if reservation.kind == "cleanup":
                 raise AppError(
                     "unsupported_operation", "Cleanup requires a separate budget contract.", 2
@@ -441,13 +441,6 @@ class Repository:
                 "FROM budget_reservations WHERE run_id=? AND state<>'released'",
                 (reservation.kind, str(reservation.run_id)),
             ).fetchone()
-            if runtime_limits is not None:
-                limits = Limits(
-                    **{
-                        key: tighter(value, getattr(runtime_limits, key))
-                        for key, value in limits.model_dump().items()
-                    }
-                )
             cap = limits.target_calls if reservation.kind == "target" else limits.evaluator_calls
             if (
                 counts[0] >= limits.total_calls
@@ -552,12 +545,13 @@ class Repository:
                     "SELECT snapshot_json FROM runs WHERE state='running'"
                 ).fetchall()
                 cap = min(
-                    limits.active_runs,
-                    candidate.profile.limits.active_runs,
-                    *[
-                        RunSnapshot.model_validate_json(item[0]).profile.limits.active_runs
-                        for item in active
-                    ],
+                    [
+                        candidate.profile.limits.tightened(limits).active_runs,
+                        *[
+                            RunSnapshot.model_validate_json(item[0]).profile.limits.active_runs
+                            for item in active
+                        ],
+                    ]
                 )
                 if len(active) >= cap:
                     return None
@@ -621,7 +615,7 @@ class Repository:
     async def begin_stage(
         self, run_id: str, work_item_id: str, stage: str, *, instance_id: str
     ) -> StageAttempt:
-        if stage not in {"selector", "generator", "judge", "reporter"}:
+        if stage not in ROLES:
             raise AppError("invalid_output", "Unknown stage.")
 
         def action(connection):

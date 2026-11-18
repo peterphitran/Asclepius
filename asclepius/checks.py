@@ -4,7 +4,7 @@ from importlib.resources import files
 from jsonschema import Draft202012Validator, SchemaError
 from pydantic import TypeAdapter, ValidationError
 
-from asclepius.domain import AppError, CheckDefinition, PromptSnapshot, SubmissionPlan
+from asclepius.domain import ROLES, AppError, CheckDefinition, PromptSnapshot, SubmissionPlan
 
 
 def local_schema(text: str) -> dict:
@@ -108,6 +108,6 @@ def load_pack_plan(pack_id: str) -> SubmissionPlan:
                 ),
                 content=_resource(f"prompts/{role}.txt"),
             )
-            for role in ("selector", "generator", "judge", "reporter")
+            for role in ROLES
         ),
     )

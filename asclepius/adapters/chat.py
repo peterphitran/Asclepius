@@ -3,10 +3,14 @@ import json
 import os
 from datetime import UTC, datetime
 from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import Field, ValidationError
 
+from asclepius.adapters import ollama
+from asclepius.adapters.ollama import _WireModel
 from asclepius.domain import (
+    ROLES,
     AppError,
     ChatInput,
     ChatOutput,
@@ -20,8 +24,6 @@ from asclepius.domain import (
 )
 from asclepius.limits import BudgetManager
 from asclepius.transport import JsonTransport, ProviderHttpError, valid_secret
-
-ROLES = frozenset({"selector", "generator", "judge", "reporter"})
 
 
 class PreparedCall(Contract):
@@ -40,10 +42,6 @@ BYTES_PER_INPUT_TOKEN = 4
 def token_upper_bound(body_json: str, max_completion_tokens: int) -> int:
     input_tokens = -(-len(body_json.encode("utf-8")) // BYTES_PER_INPUT_TOKEN)
     return input_tokens + max_completion_tokens
-
-
-class _WireModel(BaseModel):
-    model_config = ConfigDict(extra="ignore", strict=True, hide_input_in_errors=True)
 
 
 class _Usage(_WireModel):
@@ -155,6 +153,19 @@ class GroqConnection:
             raise AppError("arguments", "Unknown evaluator role.", 2)
         return getattr(self.snapshot.evaluator.roles, actor)
 
+    def prepare_target(self, work_item_id: UUID, payload: ChatInput) -> PreparedCall:
+        system = self.snapshot.profile.target.system_prompt
+        messages = payload.messages
+        if system:
+            messages = (Message(role="system", content=system), *messages)
+        return self.prepare(
+            OperationRequest(
+                run_id=self.snapshot.id,
+                work_item_id=work_item_id,
+                payload=ChatInput(messages=messages),
+            )
+        )
+
     def prepare(
         self, request: OperationRequest, *, response_format: dict | None = None
     ) -> PreparedCall:
@@ -170,8 +181,6 @@ class GroqConnection:
         payload = ChatInput(messages=messages)
         wire_messages = payload.model_dump(mode="json")["messages"]
         if _is_local(request.actor, config):
-            from asclepius.adapters import ollama
-
             body = ollama.request_body(config, wire_messages)
         else:
             body = {
@@ -191,10 +200,9 @@ class GroqConnection:
             body_bytes = len(body_json.encode("utf-8"))
         except (ValueError, TypeError, RecursionError, UnicodeError):
             raise AppError("invalid_input", "Cannot encode provider request.", 2) from None
-        kind = "target" if request.actor == "target" else "evaluator"
-        cap = min(
-            getattr(self.snapshot.profile.limits, f"{kind}_input_bytes"),
-            getattr(self.budgets.limits, f"{kind}_input_bytes"),
+        limits = self.snapshot.profile.limits.tightened(self.budgets.limits)
+        cap = (
+            limits.target_input_bytes if request.actor == "target" else limits.evaluator_input_bytes
         )
         if body_bytes > cap:
             raise AppError("input_too_large", "Provider request exceeds the byte limit.", 2)
@@ -237,11 +245,7 @@ class GroqConnection:
             body = json.loads(call.body_json)
             kind = "target" if request.actor == "target" else "evaluator"
             role = None if kind == "target" else request.actor
-            pinned = self.snapshot.profile.limits
-            deadline = min(
-                pinned.request_timeout_seconds, self.budgets.limits.request_timeout_seconds
-            )
-            cap = min(pinned.response_bytes, self.budgets.limits.response_bytes)
+            limits = self.snapshot.profile.limits.tightened(self.budgets.limits)
             reservation = await self.budgets.reserve(
                 str(request.run_id), kind, config.max_completion_tokens
             )
@@ -252,8 +256,6 @@ class GroqConnection:
                 phase = "dispatched"
                 try:
                     if local:
-                        from asclepius.adapters import ollama
-
                         url = ollama.chat_url(config.base_url)
                     else:
                         url = config.base_url.rstrip("/") + "/chat/completions"
@@ -262,8 +264,8 @@ class GroqConnection:
                             url,
                             body,
                             secret=secret,
-                            deadline_seconds=deadline,
-                            response_bytes=cap,
+                            deadline_seconds=limits.request_timeout_seconds,
+                            response_bytes=limits.response_bytes,
                         )
                     except ProviderHttpError as error:
                         # Ollama answers 404 for a model that is not installed locally.
@@ -399,27 +401,3 @@ class GroqConnection:
             request_payload=request.payload,
             dispatch_status="attempted",
         )
-
-
-class ChatAdapter:
-    def __init__(self, connection: GroqConnection) -> None:
-        self.connection = connection
-
-    def prepare(self, request: OperationRequest) -> PreparedCall:
-        if request.actor != "target":
-            raise AppError("operation_identity", "Target adapter requires a target operation.", 2)
-        system = self.connection.snapshot.profile.target.system_prompt
-        messages = request.payload.messages
-        if system:
-            messages = (Message(role="system", content=system), *messages)
-        return self.connection.prepare(
-            request.model_copy(update={"payload": ChatInput(messages=messages)})
-        )
-
-    async def execute_prepared(self, call: PreparedCall) -> Observation:
-        if call.request.actor != "target":
-            raise AppError("operation_identity", "Target adapter requires a target operation.", 2)
-        return await self.connection.execute(call)
-
-    async def execute(self, request: OperationRequest) -> Observation:
-        return await self.execute_prepared(self.prepare(request))

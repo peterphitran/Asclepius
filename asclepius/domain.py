@@ -2,7 +2,7 @@ import re
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
@@ -117,6 +117,10 @@ def allowed_transition(current: RunState, next_state: RunState) -> RunState:
     return next_state
 
 
+Role = Literal["selector", "generator", "judge", "reporter"]
+ROLES: tuple[str, ...] = get_args(Role)
+
+
 def tighter(first: int | None, second: int | None) -> int | None:
     if first is None or second is None:
         return second if first is None else first
@@ -139,6 +143,13 @@ class Limits(Contract):
     target_input_bytes: PositiveInt = 16384
     evaluator_input_bytes: PositiveInt = 65536
     response_bytes: PositiveInt = 1048576
+
+    def tightened(self, other: "Limits | None") -> "Limits":
+        if other is None:
+            return self
+        return Limits(
+            **{key: tighter(value, getattr(other, key)) for key, value in self.model_dump().items()}
+        )
 
 
 class TargetConfig(Contract):
@@ -388,7 +399,7 @@ StageOutput = Annotated[
 
 
 class PromptSnapshot(Contract):
-    role: Literal["selector", "generator", "judge", "reporter"]
+    role: Role
     version: Identity
     content: str
 
@@ -402,8 +413,9 @@ class SubmissionPlan(Contract):
     def validate_plan(self) -> "SubmissionPlan":
         if len({check.id for check in self.checks}) != len(self.checks):
             raise ValueError("Check identities must be unique.")
-        roles = {"selector", "generator", "judge", "reporter"}
-        if len(self.prompts) != 4 or {prompt.role for prompt in self.prompts} != roles:
+        if len(self.prompts) != len(ROLES) or {prompt.role for prompt in self.prompts} != set(
+            ROLES
+        ):
             raise ValueError("Exactly one prompt per role is required.")
         if any(not prompt.content.strip() for prompt in self.prompts):
             raise ValueError("Prompt content cannot be blank.")
@@ -463,7 +475,7 @@ class BudgetReservation(Contract):
 class StageAttempt(Contract):
     run_id: UUID
     work_item_id: UUID
-    stage: Literal["selector", "generator", "judge", "reporter"]
+    stage: Role
     attempt: PositiveInt
     state: Literal["pending", "completed", "failed"]
     started_at: UtcTime | None = None
