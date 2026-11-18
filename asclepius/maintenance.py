@@ -9,7 +9,8 @@ import portalocker
 from asclepius.domain import AppError
 from asclepius.paths import local_directory
 
-SCHEMA_VERSION = 4
+MIGRATIONS = ("001_initial.sql", "002_daemon_pid.sql", "003_execution.sql", "004_elapsed.sql")
+SCHEMA_VERSION = len(MIGRATIONS)
 
 
 def instance_lock(data_dir: Path, *, timeout: float = 0):
@@ -74,15 +75,7 @@ def _change_schema(data_dir: Path, *, initialize: bool, timeout: float) -> int:
                 if version != 0 or tables:
                     raise AppError("schema_version", "Unsupported storage schema version.")
                 connection.execute("PRAGMA journal_mode=WAL")
-                sql = "\n".join(
-                    _script(name)
-                    for name in (
-                        "001_initial.sql",
-                        "002_daemon_pid.sql",
-                        "003_execution.sql",
-                        "004_elapsed.sql",
-                    )
-                )
+                sql = "\n".join(_script(name) for name in MIGRATIONS)
             else:
                 raise AppError("schema_version", "Unsupported storage schema version.")
             try:

@@ -15,15 +15,24 @@ from asclepius.domain import (
 )
 from asclepius.paths import local_directory
 
+MAX_BYTES = 1048576
 
-def _read(path: Path) -> dict:
+
+def _read_bytes(path: Path, read_error: str, size_error: str) -> bytes:
     try:
         with path.open("rb") as source:
-            content = source.read(1048577)
+            content = source.read(MAX_BYTES + 1)
     except OSError:
-        raise AppError("config_read", "Cannot read configuration file.", 2) from None
-    if len(content) > 1048576:
-        raise AppError("config_size", "Configuration exceeds the 1 MiB limit.", 2)
+        raise AppError("config_read", read_error, 2) from None
+    if len(content) > MAX_BYTES:
+        raise AppError("config_size", size_error, 2)
+    return content
+
+
+def _read(path: Path) -> dict:
+    content = _read_bytes(
+        path, "Cannot read configuration file.", "Configuration exceeds the 1 MiB limit."
+    )
     try:
         return tomllib.loads(content.decode("utf-8"))
     except (tomllib.TOMLDecodeError, UnicodeDecodeError):
@@ -47,13 +56,9 @@ def load_evaluator(path: Path) -> EvaluatorConfig:
 
 
 def load_plan(path: Path) -> SubmissionPlan:
-    try:
-        with path.open("rb") as source:
-            content = source.read(1048577)
-    except OSError:
-        raise AppError("config_read", "Cannot read evaluation plan.", 2) from None
-    if len(content) > 1048576:
-        raise AppError("config_size", "Evaluation plan exceeds the 1 MiB limit.", 2)
+    content = _read_bytes(
+        path, "Cannot read evaluation plan.", "Evaluation plan exceeds the 1 MiB limit."
+    )
     try:
         return SubmissionPlan.model_validate_json(content)
     except ValidationError:
