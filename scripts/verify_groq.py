@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
+import localhost_tls
 from pydantic import BaseModel, ConfigDict
 
 import asclepius
@@ -198,7 +199,7 @@ async def prove(data_dir, server, transport):
 def main():
     installed = Path(asclepius.__file__).resolve()
     assert "site-packages" in installed.parts, installed
-    fixtures = Path(sys.argv[1]).resolve()
+    fixtures = localhost_tls.ensure(Path(sys.argv[1]).resolve())
     server = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
     server.calls = []
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

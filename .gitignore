@@ -16,3 +16,6 @@ venv/
 
 # Env / secrets
 .env
+
+# Generated loopback TLS test fixture (scripts/localhost_tls.py)
+tests/cli/fixtures/localhost-*.pem

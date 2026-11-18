@@ -10,6 +10,11 @@ from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+if __package__:
+    from . import localhost_tls
+else:
+    import localhost_tls
+
 KEY = "ASCLEPIUS_OFFLINE_FIXTURE_CREDENTIAL"
 LIMITS = {
     "active_runs": 2,
@@ -93,6 +98,7 @@ class Provider(ThreadingHTTPServer):
         self.release.set()
         self.gates = []
         self.permitted_disconnects = set()
+        localhost_tls.ensure(certificate_dir)
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(
             certificate_dir / "localhost-cert.pem", certificate_dir / "localhost-key.pem"

@@ -8,8 +8,13 @@ from pathlib import Path
 import pytest
 
 from asclepius.transport import JsonTransport
+from scripts.localhost_tls import ensure as ensure_localhost_tls
 from tests.cli.groq_support import reply
 from tests.cli.storage_fixtures import release_leases
+
+
+def pytest_configure(config):
+    ensure_localhost_tls(Path(__file__).parent / "fixtures")
 
 
 @pytest.fixture
