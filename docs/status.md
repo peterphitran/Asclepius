@@ -11,10 +11,8 @@ with outcome charts are available without a running daemon. The public runtime p
 deterministic providers over loopback HTTPS.
 Saved chat observations now retain optional `provider_model` evidence from the response,
 separately from the requested model. Older observations keep this value unknown.
-The [metadata prerequisite record](verification/evidence/cli-provider-model.json) covers
-the offline checks. Task 10 live acceptance (2026-11-16) ran the full pack against hosted
-Groq and survived a console window close on native Windows; see
-[verification](verification.md#live-groq-and-terminal-close-acceptance).
+Task 10 live acceptance (2026-11-16) ran the full pack against hosted
+Groq and survived a console window close on native Windows.
 
 Task 11 adds local Ollama targets with Groq as the evaluator. Task 12 retired the legacy
 web runtime: the FastAPI app, Postgres models and Alembic migrations, Docker Compose file,
@@ -35,14 +33,13 @@ API is preserved on the local branch `wip/legacy-sweep-lifecycle`.
 | Saved results and exports | `asclepius/results.py`, `exports.py` | Coherent comparison summaries, separate attack and control outcomes, inert JSON/Markdown/HTML and atomic local publication. |
 | Checks and agents | `asclepius/checks.py`, `agents.py`, `packs/`, `prompts/` | Twenty pinned checks, three generated attacks and one code-owned control per check. Four role contracts require an injected prepared-request dispatch. Coordinator supplies durable dispatch. |
 | Local migrations | `asclepius/maintenance.py`, `migrations/` | New schema v4 (older versions are rejected, not upgraded), OS/maintenance locking, rollback, and local-only path policy. |
-| Tests | `tests/cli/` | Real HTTP/HTTPS provider fixtures, SQLite persistence and budgets, process checks. See the [Task 7 execution results](verification/evidence/cli-pipeline.json) and [Task 8 recovery results](verification/evidence/cli-recovery.json). Native Windows skips the WSL-only mount test. |
+| Tests | `tests/cli/` | Real HTTP/HTTPS provider fixtures, SQLite persistence and budgets, process checks. Native Windows skips the WSL-only mount test. |
 
 ## Missing product capabilities
 
 Evaluator accuracy beyond the reviewed live runs, a physical human terminal closure, and
 host sleep or shutdown remain unverified. On WSL the daemon stops when WSL shuts its Linux
-side down after the last WSL session closes. Saved comparisons and exports use deterministic fixture evidence in
-[Task 9 verification](verification/evidence/cli-results.json).
+side down after the last WSL session closes. Saved comparisons and exports use deterministic fixture evidence.
 Submission rejects plans that cannot run, so every queued check has three strategies,
 evidence criteria and a severity rule. JSON-schema
 violation findings require the entire reply as evidence within the 4096-byte quote cap.
@@ -57,5 +54,5 @@ A software-sent console close was survived on native Windows with a completed li
 One native creator-exit test failed during review, then passed reruns and ten extra probes;
 its cause remains unresolved.
 
-For tested observations and limits see [verification](verification.md). Source presence
+Source presence
 and old passing-test reports do not establish a complete evaluation system.

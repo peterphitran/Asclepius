@@ -18,8 +18,8 @@ remains planned; use [implementation status](../status.md) for the tested bounda
 | [User journeys](user-journeys.md) | Check complete workflows across these features. |
 
 For a focused change, open the affected feature and relevant journey. For a broad sweep,
-follow this order and finish with journeys. Shared preconditions, proof conventions,
-and existing smoke evidence live in [verification](../verification.md).
+follow this order and finish with journeys. Shared preconditions and proof conventions
+live in [verification](../verification.md).
 
 Implemented command syntax is in [development](../development.md); the intended full
 workflow is in [product scope](../product.md).

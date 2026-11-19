@@ -1,8 +1,8 @@
 # Background daemon
 
 Status: manual detached control, readiness, heartbeat, and graceful stop are implemented.
-Scheduling and controlled model execution are verified by [Task 7](../verification/evidence/cli-pipeline.json).
-[Task 8](../verification/evidence/cli-recovery.json) verifies active drain, timeout ownership,
+Scheduling and controlled model execution are verified by Task 7.
+Task 8 verifies active drain, timeout ownership,
 submission racing drain, and manual restart after process loss. Physical terminal-close,
 sleep/shutdown, and hosted-provider acceptance remain Task 10.
 
@@ -56,7 +56,7 @@ that incomplete runs are marked interrupted, while queued runs remain available.
   inspect status. Do not delete lock files to force ownership.
 - Storage failures can include bounded native error codes and trusted stack locations in
   the daemon log, without exception messages, queries or credentials. Preserve that record
-  and the store when investigating the [open storage issue](../verification/issues/2026-11-06-storage-busy.md).
+  and the store when investigating the open storage issue.
 - Per-run bounds are insufficient: enforce global, model-provider, target, and mutable
   corpus limits across all profiles. Keep control operations responsive under saturation.
 - Cancellation and drain must not strand invisible uploaded fixtures; surface the

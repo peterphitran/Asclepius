@@ -11,7 +11,7 @@
 | [Status](status.md) | Current implementation, reusable pieces, and transition gaps. |
 | [Feature map](features/README.md) | User actions and their feature-specific verification paths. |
 | [Development](development.md) | Environment setup, CLI and daemon commands, migrations, and test commands. |
-| [Verification](verification.md) | Shared proof standards, recorded checks, and map provenance. |
+| [Verification](verification.md) | Shared proof standards and map provenance. |
 
 Read the product and status pages first, then only the feature area relevant to your task.
 

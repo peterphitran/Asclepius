@@ -1,7 +1,7 @@
 # History and comparisons
 
 Status: paginated history, saved-run inspection, manual restart recovery, and labeled
-comparisons are implemented. [Task 9](../verification/evidence/cli-results.json) verifies
+comparisons are implemented. Task 9 verifies
 coherent comparison reads and derived counts without provider calls.
 
 ## Sub-features

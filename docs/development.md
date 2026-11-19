@@ -32,13 +32,9 @@ python -m piptools compile --extra dev --generate-hashes --allow-unsafe --strip-
 ```
 
 Change the output filename for Windows. A built wheel was also installed and exercised
-outside the source directory on each platform. Recorded proof is in
-[the Task 1 evidence](verification/evidence/cli-foundation.json).
+outside the source directory on each platform.
 
 ## Installed provider-boundary proof
-
-See the [Task 5 verification record](verification/evidence/cli-groq-components.json) for
-platform results, source hashes, and installed-package observations.
 
 After building and installing a wheel in the matching test environment, run from outside
 the checkout with absolute paths:
@@ -88,9 +84,8 @@ accuracy separately. A successful driver result does not establish physical term
 survival or complete Task 10. Controlled loopback verification uses an explicit fixture CA
 and is labeled separately from live Groq execution.
 
-The [preparation evidence](verification/evidence/cli-live-workflow-preparation.json) records
-controlled checks separately from live acceptance. An earlier controlled run lost its daemon
-with a logged `storage_busy`; the [storage investigation](verification/issues/2026-11-06-storage-busy.md)
+An earlier controlled run lost its daemon
+with a logged `storage_busy`; that investigation
 remains open. Later passing checks do not establish its cause or a storage fix.
 
 ## Inspect the built-in pack

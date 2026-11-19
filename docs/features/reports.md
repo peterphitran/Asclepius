@@ -1,7 +1,7 @@
 # Reports and charts
 
 Status: JSON, Markdown, and self-contained HTML exports with inline SVG outcome/family
-counts are implemented. [Task 9](../verification/evidence/cli-results.json) records both
+counts are implemented. Task 9 records both
 installed-platform proofs, CommonMark rendering, and browser observations.
 
 ## Sub-features

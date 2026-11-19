@@ -3,7 +3,7 @@
 Status: supplied-plan submission, saved-state inspection, watch, cancellation intent, and
 linked retry commands are implemented. A manually started daemon accepts pinned plans
 into the queue and executes them through the coordinator. Phases, generated cases, stage attempts, observations and partial findings
-remain inspectable. [Task 8](../verification/evidence/cli-recovery.json) verifies cancellation,
+remain inspectable. Task 8 verifies cancellation,
 manual crash recovery, and linked retry on WSL and native Windows.
 
 ## Sub-features

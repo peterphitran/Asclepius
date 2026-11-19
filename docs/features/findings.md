@@ -1,7 +1,7 @@
 # Findings
 
 Status: paginated saved-finding reads and full finding inspection are implemented.
-The persisted pipeline produces findings. [Task 9](../verification/evidence/cli-results.json)
+The persisted pipeline produces findings. Task 9
 verifies joined input/reply/judgment/check context and cursor reads on saved evidence.
 
 ## Sub-features

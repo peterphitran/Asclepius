@@ -92,13 +92,13 @@ coverage, variant bounds, evidence provenance, and duplicate persistence handlin
 Interrupt a stage, inspect the preserved run, and exercise an explicit linked retry.
 Export twice and confirm no new target/provider calls.
 
-The [Task 7 record](../verification/evidence/cli-pipeline.json) covers normal execution
+The Task 7 record covers normal execution
 and technical failure through the public CLI, real daemon, verified loopback HTTPS, and
-SQLite. The [Task 8 record](../verification/evidence/cli-recovery.json) adds real process
+SQLite. The Task 8 record adds real process
 termination before dispatch, after target receipt, and after Reporter commit; manual restart
 preserves unknown intents and known evidence without replay. Explicit retry copies the
 saved snapshot under new identities and leaves source rows unchanged. The
-[Task 9 record](../verification/evidence/cli-results.json) verifies saved comparisons and
+Task 9 record verifies saved comparisons and
 JSON/Markdown/HTML exports without new provider calls. Live model accuracy remains Task 10.
 
 ## Design guidance

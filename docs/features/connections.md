@@ -2,8 +2,6 @@
 
 Status: partial. Groq chat boundaries and queued CLI execution are implemented and verified
 with deterministic HTTPS providers. Hosted-model acceptance remains unverified.
-See the [execution evidence](../verification/evidence/cli-pipeline.json) and the
-[model metadata prerequisite](../verification/evidence/cli-provider-model.json).
 
 ## Sub-features
 

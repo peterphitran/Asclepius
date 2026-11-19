@@ -11,11 +11,11 @@
 **Spec:** [Backend design](../specs/backend-design.md), [pipeline](../specs/evaluation-pipeline.md), [product](../product.md), [feature map](../features/README.md). [RAG design](../specs/rag-testing.md) is a later capability milestone, not implemented by this plan.
 
 Status: implementation started on `codex/cli-evaluator`. Tasks 1 through 5 are verified in
-[the foundation evidence](../verification/evidence/cli-foundation.json) and
-[the storage evidence](../verification/evidence/cli-storage.json), and
-[the management evidence](../verification/evidence/cli-management.json), and
-[the daemon evidence](../verification/evidence/cli-daemon.json), and
-[the Groq component evidence](../verification/evidence/cli-groq-components.json). Tasks 6 through 12 remain pending.
+the foundation evidence and
+the storage evidence, and
+the management evidence, and
+the daemon evidence, and
+the Groq component evidence. Tasks 6 through 12 remain pending.
 Task 4 verifies control and budget components, not queued execution or physical terminal closure.
 
 ## Global constraints
@@ -169,7 +169,7 @@ are synchronous. Do not introduce a DB thread that blocks the daemon's event loo
 
 ### Task 1: Installable CLI, configuration, and domain boundary
 
-Verified on WSL and Windows. See [Task 1 evidence](../verification/evidence/cli-foundation.json).
+Verified on WSL and Windows. See Task 1 evidence.
 
 **Files:** Create `backend/asclepius/{__init__,__main__,cli,config,domain}.py`,
 `backend/tests/cli/{__init__,test_config,test_domain,test_cli_help}.py`,
@@ -685,7 +685,7 @@ readiness and claim, causing an unclean serve exit. The narrow correction accept
 `daemon_unavailable` after checking the same generation is draining; unrelated errors
 still propagate. Existing final cleanup already awaited active work; evidence loss was
 not established by that regression. Final platform suites and installed recovery proofs
-are retained in [Task 8 evidence](../verification/evidence/cli-recovery.json).
+are retained in Task 8 evidence.
 
 ### Task 9: Findings, compatible comparisons, reports, and charts
 
